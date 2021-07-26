@@ -385,7 +385,7 @@ def get_nhd_connections(supernetwork_parameters={}, verbose=False, debuglevel=0)
 def set_waterbody_parameters(
     supernetwork="", geo_input_folder=None, verbose=True, debuglevel=0
 ):
-    """ Provide the waterbody parameters for the built-in cases """
+    """Provide the waterbody parameters for the built-in cases"""
     if supernetwork == "Pocono_TEST1":
         return {
             "level_pool": {
@@ -427,7 +427,7 @@ def set_waterbody_parameters(
 def set_supernetwork_parameters(
     supernetwork="", geo_input_folder=None, verbose=True, debuglevel=0
 ):
-    """ Provide the supernetwork parameters for the built-in cases """
+    """Provide the supernetwork parameters for the built-in cases"""
 
     # The following datasets are extracts from the feature datasets available
     # from https://www.nohrsc.noaa.gov/pub/staff/keicher/NWM_live/web/data_tools/

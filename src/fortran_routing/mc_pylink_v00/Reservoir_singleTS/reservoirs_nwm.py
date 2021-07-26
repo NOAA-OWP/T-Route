@@ -55,31 +55,44 @@ def reservoirs_calc(
     h0=None,
 ):
     """This test function demonstrates a simple connection between
-       the module_levelpool routing function and python via f2py
-       inputs are described by the fortran header:
-        real(prec), intent(IN)    :: qi0     ! inflow at previous timestep (cms)
-        real(prec), intent(IN)    :: qi1     ! inflow at current timestep (cms)
-        real(prec), intent(IN)    :: ql      ! lateral inflow
-        real(prec), intent(IN)    :: ar      ! area of reservoir (km^2)
-        real(prec), intent(IN)    :: we      ! bottom of weir elevation
-        real(prec), intent(IN)    :: wc      ! weir coeff.
-        real(prec), intent(IN)    :: wl      ! weir length (m)
-        real(prec), intent(IN)    :: dl      ! dam length(m)
-        real(prec), intent(IN)    :: oe      ! orifice elevation
-        real(prec), intent(IN)    :: oc      ! orifice coeff.
-        real(prec), intent(IN)    :: oa      ! orifice area (m^2)
-        real(prec), intent(IN)    :: maxh    ! max depth of reservoir before overtop (m)
-        real(prec), intent(IN)    :: H0      ! water elevation height (m)
+    the module_levelpool routing function and python via f2py
+    inputs are described by the fortran header:
+     real(prec), intent(IN)    :: qi0     ! inflow at previous timestep (cms)
+     real(prec), intent(IN)    :: qi1     ! inflow at current timestep (cms)
+     real(prec), intent(IN)    :: ql      ! lateral inflow
+     real(prec), intent(IN)    :: ar      ! area of reservoir (km^2)
+     real(prec), intent(IN)    :: we      ! bottom of weir elevation
+     real(prec), intent(IN)    :: wc      ! weir coeff.
+     real(prec), intent(IN)    :: wl      ! weir length (m)
+     real(prec), intent(IN)    :: dl      ! dam length(m)
+     real(prec), intent(IN)    :: oe      ! orifice elevation
+     real(prec), intent(IN)    :: oc      ! orifice coeff.
+     real(prec), intent(IN)    :: oa      ! orifice area (m^2)
+     real(prec), intent(IN)    :: maxh    ! max depth of reservoir before overtop (m)
+     real(prec), intent(IN)    :: H0      ! water elevation height (m)
 
 
-       outputs are, in order the new water depth and new outflow. 
-        real(prec), intent(OUT)   :: H1      ! water elevation height (m)
-        real(prec), intent(OUT)   :: qo1     ! outflow at current timestep
-       """
+    outputs are, in order the new water depth and new outflow.
+     real(prec), intent(OUT)   :: H1      ! water elevation height (m)
+     real(prec), intent(OUT)   :: qo1     ! outflow at current timestep
+    """
 
     # call Fortran routine
     return module_levelpool.levelpool_physics(
-        dt, qi0, qi1, ql, ar, we, maxh, wc, wl, dl, oe, oc, oa, h0,
+        dt,
+        qi0,
+        qi1,
+        ql,
+        ar,
+        we,
+        maxh,
+        wc,
+        wl,
+        dl,
+        oe,
+        oc,
+        oa,
+        h0,
     )
     # return hc, qdc
 
@@ -103,7 +116,24 @@ def main():
     oa = 0.2
     h0 = 22
 
-    print(reservoirs_calc(dt, qi0, qi1, ql, ar, we, maxh, wc, wl, dl, oe, oc, oa, h0,))
+    print(
+        reservoirs_calc(
+            dt,
+            qi0,
+            qi1,
+            ql,
+            ar,
+            we,
+            maxh,
+            wc,
+            wl,
+            dl,
+            oe,
+            oc,
+            oa,
+            h0,
+        )
+    )
 
 
 if __name__ == "__main__":

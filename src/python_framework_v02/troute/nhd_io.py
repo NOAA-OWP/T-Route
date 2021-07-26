@@ -182,7 +182,7 @@ def read_reservoir_parameter_file(
         ds = ds.swap_dims({"feature_id": lake_index_field})
 
         ds_new = ds["reservoir_type"]
-       
+
         df1 = ds_new.sel({lake_index_field: list(lake_id_mask)}).to_dataframe()
 
     return df1
@@ -314,7 +314,10 @@ def write_q_to_wrf_hydro(
             data=da.from_array(qtrt),
             dims=["time", "feature_id"],
             coords=dict(time=chrtout.time.values, feature_id=chrtout.feature_id.values),
-            attrs=dict(description="River Flow, t-route", units="m3 s-1",),
+            attrs=dict(
+                description="River Flow, t-route",
+                units="m3 s-1",
+            ),
         )
 
         # add t-route DataArray to CHRTOUT dataset
@@ -543,7 +546,11 @@ def get_usgs_from_time_slices_folder(
 ):
     usgs_files = sorted(usgs_timeslices_folder.glob(data_assimilation_filter))
 
-    with read_netcdfs(usgs_files, "time", preprocess_time_station_index,) as ds2:
+    with read_netcdfs(
+        usgs_files,
+        "time",
+        preprocess_time_station_index,
+    ) as ds2:
         df2 = pd.DataFrame(
             ds2["discharge"].values.T,
             index=ds2["stationId"].values,
@@ -700,8 +707,8 @@ def write_channel_restart_to_wrf_hydro(
     """
     Write t-route flow and depth data to WRF-Hydro restart files. New WRF-Hydro restart
     files are created that contain all of the data in the original files, plus t-route
-    flow and depth data. 
-    
+    flow and depth data.
+
     Agruments
     ---------
         data (Data Frame): t-route simulated flow, velocity and depth data
@@ -715,7 +722,7 @@ def write_channel_restart_to_wrf_hydro(
         troute_us_flow_var_name (str):
         troute_ds_flow_var_name (str):
         troute_depth_var_name (str):
-        
+
     Returns
     -------
     """
@@ -756,9 +763,16 @@ def write_channel_restart_to_wrf_hydro(
                     .to_numpy()
                     .astype("float32")
                 )
-                qtrt = qtrt.reshape((len(flowveldepth_reindex,)))
+                qtrt = qtrt.reshape(
+                    (
+                        len(
+                            flowveldepth_reindex,
+                        )
+                    )
+                )
                 qtrt_DataArray = xr.DataArray(
-                    data=qtrt, dims=[restart_file_dimension_var],
+                    data=qtrt,
+                    dims=[restart_file_dimension_var],
                 )
 
                 # pull depth data from flowveldepth array, package into DataArray
@@ -769,9 +783,16 @@ def write_channel_restart_to_wrf_hydro(
                     .to_numpy()
                     .astype("float32")
                 )
-                htrt = htrt.reshape((len(flowveldepth_reindex,)))
+                htrt = htrt.reshape(
+                    (
+                        len(
+                            flowveldepth_reindex,
+                        )
+                    )
+                )
                 htrt_DataArray = xr.DataArray(
-                    data=htrt, dims=[restart_file_dimension_var],
+                    data=htrt,
+                    dims=[restart_file_dimension_var],
                 )
 
                 # insert troute data into restart dataset

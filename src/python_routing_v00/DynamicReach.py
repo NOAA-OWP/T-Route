@@ -22,8 +22,7 @@ class DummyReach(Reach):
         super().__init__(*args, **kwargs)
 
     def compute_initial_state(self):
-        """ Compute a dummy initial state
-        """
+        """Compute a dummy initial state"""
         # print(self.upstream_flow_ts)
         # print(self.downstream_stage_ts)
         for section in self.sections:
@@ -38,8 +37,8 @@ class DummyReach(Reach):
         downstream_stage_current,
         downstream_stage_next,
     ):
-        """ the Dummy Reach simply copies the current channel state to the next time step
-            flow
+        """the Dummy Reach simply copies the current channel state to the next time step
+        flow
         """
         for section in self.sections:
             # print(j)

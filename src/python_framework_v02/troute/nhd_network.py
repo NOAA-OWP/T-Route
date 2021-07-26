@@ -95,7 +95,7 @@ def find_tw_for_node(reaches_bytw, node):
     """
     reaches_bytw is a dictionary of lists of the form
 
-    tw 1: 
+    tw 1:
       [ [ seg1, seg2, seg3, ... segn ], # reach 1
         [ sega, segb, segc, ... segz ], # reach 2
         .

@@ -324,9 +324,9 @@ depthval_index = 3  # depthval
 qlatval_index = 4  # qlatval
 storageval_index = 5  # storageval
 qlatCumval_index = 6  # qlatCumval
-kinCelerity_index = 7 # ck
-courant_index = 8 # cn
-X_index = 9 # X
+kinCelerity_index = 7  # ck
+courant_index = 8  # cn
+X_index = 9  # X
 
 ## network and reach utilities
 import nhd_network_utilities_v01 as nnu
@@ -692,7 +692,7 @@ def compute_mc_reach_up2down(
             volumec,
             qlatCum,
             ck,
-            cn, 
+            cn,
             X,
         ]
 
@@ -786,8 +786,8 @@ def compute_level_pool_reach_up2down(
         volumec = volumec + flowveldepth[current_segment][ts - 1][storageval_index]
         qlatCum = qlatCum + flowveldepth[current_segment][ts - 1][qlatCumval_index]
 
-    #TODO: There may be a more useful output value to provide here.
-    #celerity values are nullified for reservoirs.
+    # TODO: There may be a more useful output value to provide here.
+    # celerity values are nullified for reservoirs.
     ck = 0
     cn = 0
     X = 0
@@ -936,7 +936,7 @@ def writeArraytoNC(
                 flowveldepth_data["xval"].append(
                     flowveldepth[current_segment][:, X_index]
                 )
-            
+
                 # write segment flowveldepth_data['segment']
                 flowveldepth_data["segment"].append(current_segment)
                 if not TIME_WRITTEN:
@@ -1055,32 +1055,31 @@ def writeNC(
     lateralCumflow.standard_name = (
         "Cummulativelateralflow"  # this is a CF standard name
     )
-    
+
     # write  kinematic celerity
     celerity = ncfile.createVariable(
         "celerity", np.float64, ("time", "stations")
     )  # note: unlimited dimension is leftmost
     celerity.units = "ft/s"  #
     celerity[:, :] = np.transpose(np.array(flowveldepth_data["ckval"], dtype=float))
-    celerity.standard_name = "celerity" 
-    
+    celerity.standard_name = "celerity"
+
     # write  courant number
     courant = ncfile.createVariable(
         "courant", np.float64, ("time", "stations")
     )  # note: unlimited dimension is leftmost
     courant.units = "-"  #
     courant[:, :] = np.transpose(np.array(flowveldepth_data["cnval"], dtype=float))
-    courant.standard_name = "courant number" 
-    
+    courant.standard_name = "courant number"
+
     # write  X parameter
     X_param = ncfile.createVariable(
         "X", np.float64, ("time", "stations")
     )  # note: unlimited dimension is leftmost
     X_param.units = "-"  #
     X_param[:, :] = np.transpose(np.array(flowveldepth_data["xval"], dtype=float))
-    X_param.standard_name = "MC X parameter" 
-    
-    
+    X_param.standard_name = "MC X parameter"
+
     # write time in seconds since  TODO get time from lateral flow from NWM
     time = ncfile.createVariable("time", np.float64, "time")
     time.units = "seconds since 2011-08-27 00:00:00"  ## TODO get time fron NWM as argument to this function
@@ -1173,7 +1172,7 @@ def main():
             run_parameters,
             parity_parameters,
         ) = nio.read_custom_input(custom_input_file)
-        
+
         break_network_at_waterbodies = run_parameters.get(
             "break_network_at_waterbodies", None
         )
@@ -1317,10 +1316,16 @@ def main():
             root, "test/input/geo/NWM_2.1_Sample_Datasets/Pocono_TEST1/"
         )
         lakeparm_file = os.path.join(
-            NWM_test_path, "primary_domain", "DOMAIN", "LAKEPARM.nc",
+            NWM_test_path,
+            "primary_domain",
+            "DOMAIN",
+            "LAKEPARM.nc",
         )
         routelink_file = os.path.join(
-            NWM_test_path, "primary_domain", "DOMAIN", "Route_Link.nc",
+            NWM_test_path,
+            "primary_domain",
+            "DOMAIN",
+            "Route_Link.nc",
         )
         time_string = "2017-12-31_06-00_DOMAIN1"
         wrf_hydro_restart_file = os.path.join(
@@ -1462,7 +1467,8 @@ def main():
         connections_tailwaters = supernetwork_values[4]
 
         waterbodies_df = nio.read_waterbody_df(
-            waterbody_parameters, waterbodies_values,
+            waterbody_parameters,
+            waterbodies_values,
         )
         waterbodies_df = waterbodies_df.sort_index(axis="index").sort_index(
             axis="columns"
@@ -1536,7 +1542,13 @@ def main():
             waterbody_initial_depth_const = 0.0
             # Set initial states from cold-state
             waterbody_initial_states_df = pd.DataFrame(
-                0, index=waterbodies_df.index, columns=["qd0", "h0",], dtype="float32"
+                0,
+                index=waterbodies_df.index,
+                columns=[
+                    "qd0",
+                    "h0",
+                ],
+                dtype="float32",
             )
             # TODO: This assignment could probably by done in the above call
             waterbody_initial_states_df["qd0"] = waterbody_initial_ds_flow_const
@@ -1574,7 +1586,14 @@ def main():
         channel_initial_depth_const = 0.0
         # Set initial states from cold-state
         channel_initial_states_df = pd.DataFrame(
-            0, index=connections.keys(), columns=["qu0", "qd0", "h0",], dtype="float32"
+            0,
+            index=connections.keys(),
+            columns=[
+                "qu0",
+                "qd0",
+                "h0",
+            ],
+            dtype="float32",
         )
         channel_initial_states_df["qu0"] = channel_initial_us_flow_const
         channel_initial_states_df["qd0"] = channel_initial_ds_flow_const

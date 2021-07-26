@@ -120,7 +120,9 @@ def mc_tlp_over_seg(
             mc.muskingcunge_module.main()
             if debuglevel <= -2:
                 print(
-                    mc.var.qdc, mc.var.vel, mc.var.depth,
+                    mc.var.qdc,
+                    mc.var.vel,
+                    mc.var.depth,
                 )
 
             #             print(f"ts {ts} head_segment {head_segment} segINDEX {seg} segID {segID} ql {mc.var.ql} \

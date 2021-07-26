@@ -301,7 +301,10 @@ def set_supernetwork_parameters(
             {
                 "title_string": "Cape Fear River Basin, NC",  # overwrites other title...
                 "mask_file_path": pathlib.Path(
-                    geo_input_folder, "Channels", "masks", "CapeFear_FULL_RES.txt",
+                    geo_input_folder,
+                    "Channels",
+                    "masks",
+                    "CapeFear_FULL_RES.txt",
                 ).resolve(),
                 "mask_driver_string": "csv",
                 "mask_layer_string": "",
@@ -319,7 +322,10 @@ def set_supernetwork_parameters(
             {
                 "title_string": "Hurricane Florence Domain, near Durham NC",  # overwrites other title...
                 "mask_file_path": pathlib.Path(
-                    geo_input_folder, "Channels", "masks", "Florence_FULL_RES.txt",
+                    geo_input_folder,
+                    "Channels",
+                    "masks",
+                    "Florence_FULL_RES.txt",
                 ).resolve(),
                 "mask_driver_string": "csv",
                 "mask_layer_string": "",
@@ -447,14 +453,16 @@ def build_connections(supernetwork_parameters):
 
     connections = nhd_network.extract_connections(param_df, "downstream")
     param_df = param_df.drop("downstream", axis=1)
-    
+
     param_df = param_df.astype("float32")
 
     # datasub = data[['dt', 'bw', 'tw', 'twcc', 'dx', 'n', 'ncc', 'cs', 's0']]
     return connections, param_df, wbodies, gages
 
 
-def build_gages(segment_gage_df,):
+def build_gages(
+    segment_gage_df,
+):
     gage_list = list(map(bytes.strip, segment_gage_df.gages.values))
     gage_mask = list(map(bytes.isdigit, gage_list))
     gages = segment_gage_df.loc[gage_mask, "gages"].to_dict()
@@ -502,9 +510,7 @@ def organize_independent_networks(connections, wbodies=None):
     return independent_networks, reaches_bytw, rconn
 
 
-def build_channel_initial_state(
-    restart_parameters, segment_index=pd.Index([])
-):
+def build_channel_initial_state(restart_parameters, segment_index=pd.Index([])):
 
     channel_restart_file = restart_parameters.get("channel_restart_file", None)
 
@@ -530,7 +536,10 @@ def build_channel_initial_state(
         # assume to be zero
         # 0, index=connections.keys(), columns=["qu0", "qd0", "h0",], dtype="float32"
         q0 = pd.DataFrame(
-            0, index=segment_index, columns=["qu0", "qd0", "h0"], dtype="float32",
+            0,
+            index=segment_index,
+            columns=["qu0", "qd0", "h0"],
+            dtype="float32",
         )
     # TODO: If needed for performance improvement consider filtering mask file on read.
     if not segment_index.empty:
@@ -569,8 +578,8 @@ def build_qlateral_array(
 
         qlat_df = nhd_io.get_ql_from_wrf_hydro_mf(
             qlat_files=qlat_files,
-            #ts_iterator=ts_iterator,
-            #file_run_size=file_run_size,
+            # ts_iterator=ts_iterator,
+            # file_run_size=file_run_size,
             index_col=qlat_file_index_col,
             value_col=qlat_file_value_col,
         )
@@ -632,7 +641,9 @@ def build_data_assimilation(data_assimilation_parameters):
 
     if last_obs_file:
         last_obs_df = nhd_io.build_last_obs_df(
-            last_obs_file, last_obs_crosswalk_file, last_obs_type,
+            last_obs_file,
+            last_obs_crosswalk_file,
+            last_obs_type,
         )
 
     if data_assimilation_csv:

@@ -135,8 +135,8 @@ def compute_network(
                         reach_flowdepthvel[head_segment][current_segment]["qlat"][
                             "curr"
                         ] = (
-                            (ts + 1) * 10.0
-                        )  # lateral flow per segment
+                            ts + 1
+                        ) * 10.0  # lateral flow per segment
 
                         reach_flowdepthvel[head_segment][current_segment]["flow"][
                             "prev"

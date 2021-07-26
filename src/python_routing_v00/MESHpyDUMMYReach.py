@@ -132,7 +132,7 @@ class MESHpyDUMMYReach(Reach):
     def compute_initial_state(
         self, verbose=False, write_output=False, output_path=None
     ):
-        """ Initial state computed in initialization function."""
+        """Initial state computed in initialization function."""
         for i, section in enumerate(self.sections):
             # print(f'yy, qq {self.yy} {self.qq}')
             section.time_steps.append(

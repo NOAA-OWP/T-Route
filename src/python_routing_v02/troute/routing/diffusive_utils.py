@@ -8,17 +8,17 @@ def adj_alt1(
 ):
     """
     Adjust reach altitude data so that altitude of last node in reach is equal to that of the head segment of
-    the neighboring downstream reach. 
-    
+    the neighboring downstream reach.
+
     Parameters
     ----------
     mx_jorder -- (int) maximum network reach order
     geo_cols -- (ndarray of strs) column headers for geomorphic parameters data array (geo_data)
     geo_index -- (ndarray of int64s) row indices for geomorphic parameters data array (geo_data)
     geo_data --(ndarray of float32s) geomorphic parameters data arra
-    dbfksegID -- (int) segment ID of fake (ghost) node at network downstream boundary 
+    dbfksegID -- (int) segment ID of fake (ghost) node at network downstream boundary
     z_all -- (dict) adjusted altitude dictionary with placeholder values to be replaced
-    
+
     Returns
     ----------
     z_all -- (dict) adjusted altitude dictionary
@@ -65,7 +65,7 @@ def fp_network_map(
 ):
     """
     Channel network mapping between Python and Fortran
-    
+
     Parameters
     ----------
     mx_jorder -- (int) maximum network reach order
@@ -73,9 +73,9 @@ def fp_network_map(
     rchbottom_reaches -- (dict) reaches and reach metadata keyed by reach tail segment
     nrch_g -- (int) number of reaches in the network
     frnw_col -- (int) number of columns in the fortran network map
-    dbfskegID -- (str) segment ID of fake (ghost) node at network downstream boundary 
+    dbfskegID -- (str) segment ID of fake (ghost) node at network downstream boundary
     pynw -- (dict) ordered reach head segments
-    
+
     Returns
     -------
     frnw_g -- (nparray of int) Fortran-Python network mapping array
@@ -146,7 +146,7 @@ def fp_chgeo_map(
 ):
     """
     Channel geometry data mapping between Python and Fortran
-    
+
     Parameters
     ----------
     mx_jorder -- (int) maximum network reach order
@@ -157,7 +157,7 @@ def fp_chgeo_map(
     z_all -- (dict) adjusted altitude dictionary
     mxncomp_g -- (int) maximum number of nodes in a reach
     nrch_g -- (int) number of reaches in the network
-    
+
     Returns
     -------
     z_ar_g -- (numpy of float64s) altitude (meters)
@@ -246,7 +246,7 @@ def fp_qlat_map(
 ):
     """
     lateral inflow mapping between Python and Fortran
-    
+
     Parameters
     ----------
     mx_jorder -- (int) maximum network reach order
@@ -256,11 +256,11 @@ def fp_qlat_map(
     geo_data -- (ndarray of float32) geomorphic parameters data array
     qlat_data -- (ndarray of float32) qlateral data (m3/sec)
     qlat_g -- (ndarray of float32) empty qlateral array to be filled
-    
+
     Returns
     -------
     qlat_g -- (ndarray of float32) qlateral array (m3/sec/m)
-    
+
     Notes
     -----
     data in qlat_g are normalized by segment length with units of m2/sec = m3/sec/m
@@ -296,7 +296,7 @@ def fp_qlat_map(
 def fp_ubcd_map(frnw_g, pynw, nts_ub_g, nrch_g, geo_index, qlat_data, qlat_g):
     """
     Upstream boundary condition mapping between Python and Fortran
-    
+
     Parameters
     ----------
     frnw_g -- (nparray of int) Fortran-Python network mapping array
@@ -304,8 +304,8 @@ def fp_ubcd_map(frnw_g, pynw, nts_ub_g, nrch_g, geo_index, qlat_data, qlat_g):
     nrch_g -- (int) number of reaches in the network
     geo_index -- (ndarray of int64) row indices for geomorphic parameters data array (geo_data)
     qlat_data -- (ndarray of float32) qlateral data (m3/sec)
-    qlat_g -- (ndarray of float32) qlateral array (m3/sec/m) 
-    
+    qlat_g -- (ndarray of float32) qlateral array (m3/sec/m)
+
     Returns
     -------
     ubcd_g -- (ndarray of float32) upstream boundary data (m3/sec)
@@ -329,14 +329,14 @@ def fp_ubcd_map(frnw_g, pynw, nts_ub_g, nrch_g, geo_index, qlat_data, qlat_g):
 def fp_dbcd_map(usgsID2tw=None, usgssDT=None, usgseDT=None, usgspCd=None):
     """
     Downststream boundary condition mapping between Python and Fortran using USGS stage observations
-    
+
     Parameters
     ----------
     usgsID2tw -- (str) usgs site ID
-    usgssDT -- (str) start data request date (yyyy-mm-dd) 
-    usgseDT -- (str) end data request date (yyyy-mm-dd) 
-    usgspCd --  (list of str) usgs parameter code 
-    
+    usgssDT -- (str) start data request date (yyyy-mm-dd)
+    usgseDT -- (str) end data request date (yyyy-mm-dd)
+    usgspCd --  (list of str) usgs parameter code
+
     Returns
     -------
     nts_db_g -- (int) number of timesteps in downstream boundary data
@@ -405,7 +405,7 @@ def fp_dbcd_map(usgsID2tw=None, usgssDT=None, usgseDT=None, usgspCd=None):
     else:
         nts_db_g = 1
         dbcd_g = -np.ones(nts_db_g)
-        
+
     return nts_db_g, dbcd_g
 
 
@@ -422,7 +422,7 @@ def diffusive_input_data_v02(
 ):
     """
     Build input data objects for diffusive wave model
-    
+
     Parameters
     ----------
     tw -- (int) Tailwater segment ID
@@ -434,7 +434,7 @@ def diffusive_input_data_v02(
     geo_index -- (ndarray of int64s) row indices for geomorphic parameters data array (geo_data)
     geo_data --(ndarray of float32s) geomorphic parameters data array
     qlat_data -- (ndarray of float32) qlateral data (m3/sec)
-    
+
     Returns
     -------
     diff_ins -- (dict) formatted inputs for diffusive wave model
@@ -632,10 +632,10 @@ def diffusive_input_data_v02(
             ipos = seg2usgsID.index(tw)
             usgsID2tw = usgsID[ipos]
         else:
-            usgsID2tw=None
+            usgsID2tw = None
     else:
-        usgsID2tw=None
-    
+        usgsID2tw = None
+
     nts_db_g, dbcd_g = fp_dbcd_map(usgsID2tw, usgssDT, usgseDT, usgspCd)
 
     # ---------------------------------------------------------------------------------
@@ -721,17 +721,17 @@ def diffusive_input_data_v02(
 def unpack_output(pynw, ordered_reaches, out_q, out_elv):
     """
     Unpack diffusive wave output arrays
-    
+
     Parameters
     ----------
     pynw -- (dict) ordered reach head segments
-    ordered_reaches -- 
+    ordered_reaches --
     out_q -- (diffusive._memoryviewslice of float64) diffusive wave model flow output (m3/sec)
     out_elv -- (diffusive._memoryviewslice of float64) diffusive wave model water surface elevation output (meters)
-    
+
     Returns
     -------
-    np.asarray(rch_list, dtype=np.intp) - segment indices 
+    np.asarray(rch_list, dtype=np.intp) - segment indices
     np.asarray(dat_all, dtype = 'float32') - flow, velocity, elevation array
     """
 

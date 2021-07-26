@@ -52,7 +52,10 @@ def build_test_parameters(
 
         # Simulation domain RouteLink file
         routelink_file = pathlib.Path(
-            NWM_test_path, "primary_domain", "DOMAIN", "Route_Link.nc",
+            NWM_test_path,
+            "primary_domain",
+            "DOMAIN",
+            "Route_Link.nc",
         ).resolve()
 
         # Speficify WRF hydro restart file, name and destination
@@ -158,7 +161,8 @@ def build_test_parameters(
 
 
 def parity_check(
-    parity_set, results,
+    parity_set,
+    results,
 ):
     nts = parity_set["nts"]
     dt = parity_set["dt"]

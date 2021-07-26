@@ -35,19 +35,24 @@ def main(
     Y_min,
 ):
     # select the number of points you'd like to sample
-   
 
     dt = 60  # Time step
     dx = 1800  # segment length
     # bw = np.linspace(0.135, 230.035, array_length, endpoint=True) # Trapezoidal bottom width
     bw = np.random.uniform(bw_min, bw_max, num_samp_pred)  # Trapezoidal bottom width
-    tw = np.random.uniform(tw_min, tw_max, num_samp_pred)  # Channel top width (at bankfull)
+    tw = np.random.uniform(
+        tw_min, tw_max, num_samp_pred
+    )  # Channel top width (at bankfull)
     # twcc = np.linspace(0.67, 1150.17, array_length, endpoint=True) # Flood plain width
     # twcc = tw*  # Flood plain width tw*3
     n_manning = 0.028  # manning roughness of channel
     n_manning_cc = 0.028  # manning roughness of floodplain
-    cs = np.random.uniform(cs_min, cs_max, num_samp_pred)  # channel trapezoidal sideslope
-    s0 = np.random.uniform(s0_min, s0_max, num_samp_pred)  # Lateral inflow in this time step
+    cs = np.random.uniform(
+        cs_min, cs_max, num_samp_pred
+    )  # channel trapezoidal sideslope
+    s0 = np.random.uniform(
+        s0_min, s0_max, num_samp_pred
+    )  # Lateral inflow in this time step
     qup = np.random.uniform(
         qup_min, qup_max, num_samp_pred
     )  # Flow from the upstream neighbor in the previous timestep
@@ -93,7 +98,7 @@ def main(
             depthp=depthp[i],
         )
         temp_y_list.append(temp_y[0])
-        
+
         # for i in range(0,len(temp_y_list)):
         #     temp_y_list[i] = NN_normalization.normalize(temp_y_list[i],Y_max,Y_min)
         temp_y_interp = regr.predict(
@@ -118,7 +123,7 @@ def main(
                 ]
             )
         )
-        temp_y_interp = NN_normalization.denormalize(temp_y_interp,Y_max,Y_min)
+        temp_y_interp = NN_normalization.denormalize(temp_y_interp, Y_max, Y_min)
         # calculates errors
         if i % 1000 == 0:
             print(i)

@@ -1,4 +1,4 @@
-#first run the demo file stored in ../src/fortran_routing/mc_pylink_v00/MC_singleSeg_singleTS to generate the mc_sseg_stime
+# first run the demo file stored in ../src/fortran_routing/mc_pylink_v00/MC_singleSeg_singleTS to generate the mc_sseg_stime
 from pylab import *
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
@@ -35,14 +35,11 @@ import NN_argparse
 def main():
     args = NN_argparse._handle_args()
 
-    
-    
     epochs = int(args.epochs)
     batch_size = int(args.batch_size)
     num_samp_val = int(args.num_samp_val)
     num_samp_pred = int(args.num_samp_pred)
     AL = int(args.AL)
-   
 
     # #output lists if multiple runs were perfermed
     # can set AL to a list to run multiple tests on different sized arrays
@@ -75,8 +72,7 @@ def main():
         mean_rel_errors_list,
         max_rel_errors_list,
         Y_max,
-        Y_min
-
+        Y_min,
     ) = NN_gen_training_data.main(
         depthp_min,
         depthp_max,
@@ -96,7 +92,7 @@ def main():
         tw_max,
         bw_min,
         bw_max,
-        AL
+        AL,
     )
 
     (VAL_x, VAL_y) = NN_gen_val_data.main(
@@ -120,7 +116,7 @@ def main():
         bw_max,
         num_samp_val,
         Y_max,
-        Y_min
+        Y_min,
     )
     # this section randomly generates validation data between the min and the max for us to train against. The model uses its training x and y data to improve itself, but will compare on unseen validation
     # data to make sure it is not overfitting as much
@@ -154,12 +150,12 @@ def main():
     history = regr.fit(
         M[:], Y[:], epochs=epochs, batch_size=batch_size, validation_data=(VAL_x, VAL_y)
     )
-    plt.plot(history.history['mse'])
-    plt.plot(history.history['val_mse'])
-    plt.title('model error')
-    plt.ylabel('mse')
-    plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
+    plt.plot(history.history["mse"])
+    plt.plot(history.history["val_mse"])
+    plt.title("model error")
+    plt.ylabel("mse")
+    plt.xlabel("epoch")
+    plt.legend(["train", "test"], loc="upper left")
     plt.show()
     # regr.save('ML_4Test',save_format='tf')
     print(regr.predict(M[-1:]))

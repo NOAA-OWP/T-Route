@@ -355,26 +355,35 @@ def main_v02(argv):
             .set_index("lake_id")
         )
 
-        #Declare empty dataframe
+        # Declare empty dataframe
         waterbody_types_df = pd.DataFrame()
 
-        #Check if hybrid-usgs, hybrid-usace, or rfc type reservoirs are set to true
-        wbtype="hybrid_and_rfc"
-        wb_params_hybrid_and_rfc = waterbody_parameters.get(wbtype, defaultdict(list))  # TODO: Convert these to `get` statments
+        # Check if hybrid-usgs, hybrid-usace, or rfc type reservoirs are set to true
+        wbtype = "hybrid_and_rfc"
+        wb_params_hybrid_and_rfc = waterbody_parameters.get(
+            wbtype, defaultdict(list)
+        )  # TODO: Convert these to `get` statments
 
-        wbtype="level_pool"
-        wb_params_level_pool = waterbody_parameters.get(wbtype, defaultdict(list))  # TODO: Convert these to `get` statments
+        wbtype = "level_pool"
+        wb_params_level_pool = waterbody_parameters.get(
+            wbtype, defaultdict(list)
+        )  # TODO: Convert these to `get` statments
 
         waterbody_type_specified = False
 
-        if wb_params_hybrid_and_rfc["reservoir_persistence_usgs"] \
-        or wb_params_hybrid_and_rfc["reservoir_persistence_usace"] \
-        or wb_params_hybrid_and_rfc["reservoir_rfc_forecasts"]:
+        if (
+            wb_params_hybrid_and_rfc["reservoir_persistence_usgs"]
+            or wb_params_hybrid_and_rfc["reservoir_persistence_usace"]
+            or wb_params_hybrid_and_rfc["reservoir_rfc_forecasts"]
+        ):
 
             waterbody_type_specified = True
 
-            waterbody_types_df = nhd_io.read_reservoir_parameter_file(wb_params_hybrid_and_rfc["reservoir_parameter_file"], \
-                wb_params_level_pool["level_pool_waterbody_id"], wbodies.values(),) 
+            waterbody_types_df = nhd_io.read_reservoir_parameter_file(
+                wb_params_hybrid_and_rfc["reservoir_parameter_file"],
+                wb_params_level_pool["level_pool_waterbody_id"],
+                wbodies.values(),
+            )
 
             # Remove duplicate lake_ids and rows
             waterbody_types_df = (
@@ -384,7 +393,7 @@ def main_v02(argv):
             )
 
     else:
-        #Declare empty dataframe
+        # Declare empty dataframe
         waterbody_types_df = pd.DataFrame()
         waterbodies_df = pd.DataFrame()
 
@@ -396,9 +405,7 @@ def main_v02(argv):
 
     independent_networks, reaches_bytw, rconn = nnu.organize_independent_networks(
         connections,
-        list(waterbodies_df.index.values)
-        if break_network_at_waterbodies
-        else None,
+        list(waterbodies_df.index.values) if break_network_at_waterbodies else None,
     )
     if verbose:
         print("reach organization complete")
@@ -429,7 +436,13 @@ def main_v02(argv):
             waterbodies_initial_depth_const = -1.0
             # Set initial states from cold-state
             waterbodies_initial_states_df = pd.DataFrame(
-                0, index=waterbodies_df.index, columns=["qd0", "h0",], dtype="float32"
+                0,
+                index=waterbodies_df.index,
+                columns=[
+                    "qd0",
+                    "h0",
+                ],
+                dtype="float32",
             )
             # TODO: This assignment could probably by done in the above call
             waterbodies_initial_states_df["qd0"] = waterbodies_initial_ds_flow_const
@@ -719,7 +732,8 @@ def main_v02(argv):
         parity_parameters["dt"] = dt
 
         build_tests.parity_check(
-            parity_parameters, results,
+            parity_parameters,
+            results,
         )
 
         if verbose:

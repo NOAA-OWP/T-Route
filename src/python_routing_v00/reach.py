@@ -24,7 +24,7 @@ from math import sqrt
 
 class Reach:
     """Class definition for reaches related as part of a computational scheme for
-       open channel routing. Reach will need to be expanded with concepts from HyFeatures Nexuses and Watersheds"""
+    open channel routing. Reach will need to be expanded with concepts from HyFeatures Nexuses and Watersheds"""
 
     # TODO: Somewhere, there will need to be a de-tangling of how we call and initialize a rectangular channel vs.
     #      vs. trapezoidal, vs. generalized, etc. Perhaps that can be handled within the input files...
@@ -124,7 +124,7 @@ class Reach:
         hydrograph_skewness=4,
         hydrograph_qpeak=5000,
     ):
-        """ This input option is intended to be an extremely simple channel for testing and plotting development"""
+        """This input option is intended to be an extremely simple channel for testing and plotting development"""
         self.I_UPSTREAM = n_sections - 1
         self.I_DOWNSTREAM = 0
 

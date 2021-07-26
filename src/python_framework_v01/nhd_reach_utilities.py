@@ -13,8 +13,8 @@ def recursive_reach_read_new(
     debuglevel=0,
 ):
     """
-       This function improves on the `recursive_reach_read` function by removing 
-       some of the duplication in the tests. 
+    This function improves on the `recursive_reach_read` function by removing
+    some of the duplication in the tests.
     """
 
     csegment = segment
@@ -192,8 +192,8 @@ def recursive_reach_read(
     debuglevel=0,
 ):
     """
-       This function now uses only single segment
-       The DEPRECATED function below used the list of upstream segments as an input.
+    This function now uses only single segment
+    The DEPRECATED function below used the list of upstream segments as an input.
     """
 
     csegment = segment
@@ -598,9 +598,9 @@ def compose_networks(
 
 
 def order_networks(connections, networks, tailwaters):
-    """Assumes that every tailwater is a network -- but there may 
-        be many networks that are upstream networks and therefore 
-        not tailwaters."""
+    """Assumes that every tailwater is a network -- but there may
+    be many networks that are upstream networks and therefore
+    not tailwaters."""
 
     curr_seqorder = 0
     recursive_order_networks(connections, networks, tailwaters, curr_seqorder)

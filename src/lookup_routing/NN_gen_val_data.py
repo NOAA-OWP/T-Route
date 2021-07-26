@@ -30,22 +30,26 @@ def main(
     bw_max,
     num_samp_val,
     Y_max,
-    Y_min
-
+    Y_min,
 ):
-    
 
     dt = 60  # Time step
     dx = 1800  # segment length
     # bw = np.linspace(0.135, 230.035, array_length, endpoint=True) # Trapezoidal bottom width
     bw = np.random.uniform(bw_min, bw_max, num_samp_val)  # Trapezoidal bottom width
-    tw = np.random.uniform(tw_min, tw_max, num_samp_val)  # Channel top width (at bankfull)
+    tw = np.random.uniform(
+        tw_min, tw_max, num_samp_val
+    )  # Channel top width (at bankfull)
     # twcc = np.linspace(0.67, 1150.17, array_length, endpoint=True) # Flood plain width
     # twcc = tw*  # Flood plain width tw*3
     n_manning = 0.028  # manning roughness of channel
     n_manning_cc = 0.028  # manning roughness of floodplain
-    cs = np.random.uniform(cs_min, cs_max, num_samp_val)  # channel trapezoidal sideslope
-    s0 = np.random.uniform(s0_min, s0_max, num_samp_val)  # Lateral inflow in this time step
+    cs = np.random.uniform(
+        cs_min, cs_max, num_samp_val
+    )  # channel trapezoidal sideslope
+    s0 = np.random.uniform(
+        s0_min, s0_max, num_samp_val
+    )  # Lateral inflow in this time step
     qup = np.random.uniform(
         qup_min, qup_max, num_samp_val
     )  # Flow from the upstream neighbor in the previous timestep
@@ -103,8 +107,8 @@ def main(
         )
         VAL_y.append(S[0])
 
-    for i in range(0,len(VAL_y)):
-        VAL_y[i] = NN_normalization.normalize(VAL_y[i],Y_max,Y_min)
+    for i in range(0, len(VAL_y)):
+        VAL_y[i] = NN_normalization.normalize(VAL_y[i], Y_max, Y_min)
     VAL_x = np.array(VAL_x)
     VAL_y = np.array(VAL_y)
     return (VAL_x, VAL_y)

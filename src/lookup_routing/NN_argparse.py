@@ -40,7 +40,6 @@ def _handle_args():
         dest="AL",
         default=4,
     )
-    
 
     args = parser.parse_args()
 

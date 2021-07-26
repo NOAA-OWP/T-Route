@@ -22,9 +22,9 @@ class SteadyReach(Reach):
         super().__init__(*args, **kwargs)
 
     def compute_initial_state(self):
-        """ Compute a steady initial state (this uses the same math as the next-
-            time-step-state, only we simply assume we are using the first timestep
-            of the boundary time-series.)
+        """Compute a steady initial state (this uses the same math as the next-
+        time-step-state, only we simply assume we are using the first timestep
+        of the boundary time-series.)
         """
         # print(self.upstream_flow_ts)
         # print(self.downstream_stage_ts)
@@ -41,8 +41,8 @@ class SteadyReach(Reach):
         downstream_stage_current,
         downstream_stage_next,
     ):
-        """ the Steady Reach performs the Standard Step method to compute a steady profile
-            for each flow and downstream stage in the series.
+        """the Steady Reach performs the Standard Step method to compute a steady profile
+        for each flow and downstream stage in the series.
         """
         self.add_steady_time_step(
             j_current, j_next, self.sections, downstream_stage_next, upstream_flow_next
@@ -54,7 +54,7 @@ class SteadyReach(Reach):
         # TODO: Ask Nick -- should this be inside the Steady Timestep class?
 
         for i, section in enumerate(sections):
-            """ Step through using the standard step method
+            """Step through using the standard step method
             See tutorial here: https://www.youtube.com/watch?v=P4MhwS03Kl0
             """
             # print(f'dssn {downstream_stage_next}')
@@ -107,8 +107,8 @@ class SteadyReach(Reach):
         k=constants.MANNING_M,
         gravity=constants.GRAVITY,
     ):
-        """ function to compute error in depth calculation for a guessed depth compared to a calculated depth for a given flow.
-            Uses scipy.optimize fmin """
+        """function to compute error in depth calculation for a guessed depth compared to a calculated depth for a given flow.
+        Uses scipy.optimize fmin"""
         y_ds = section_ds.time_steps[j].depth
         z_us = section_us.bottom_z
         z_ds = section_ds.bottom_z
@@ -205,7 +205,7 @@ class SteadyReach(Reach):
         gravity=constants.GRAVITY,
         k=constants.MANNING_M,
     ):
-        """ computes the error term comparing the Manning's computed depth with the given Q """
+        """computes the error term comparing the Manning's computed depth with the given Q"""
         Area_us = section_us.get_area_depth(y_us)
         Area_ds = section_ds.get_area_depth(y_ds)
         # print(f'{Area_us} {Area_ds}')

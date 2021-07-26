@@ -141,7 +141,7 @@ class MESHpyReach(Reach):
     def compute_initial_state(
         self, verbose=False, write_output=False, output_path=None
     ):
-        """ Initial state computed in initialization function."""
+        """Initial state computed in initialization function."""
         q_init = self.qq
         y_init = self.yy
         j_init = 0

@@ -75,8 +75,8 @@ else:
 
 
 def compute_mc_up2down_ReachbySegment():
-    """HANDLE LOOPING, 
-        Then call single segment routine for each segment"""
+    """HANDLE LOOPING,
+    Then call single segment routine for each segment"""
     pass
 
 
@@ -157,12 +157,13 @@ def singlesegment(
 
     return rv[:3]
 
+
 def main():
     """
-      No Inputs: 
-      Uses seceral sets of hard-coded test values to show the behavior
-      of the Muskingum Cunge routing calculation module under a low-flow 
-      and a high-flow condition.
+    No Inputs:
+    Uses seceral sets of hard-coded test values to show the behavior
+    of the Muskingum Cunge routing calculation module under a low-flow
+    and a high-flow condition.
     """
     print(
         "First test low-flow, showing expected result depending on precision of calculation."

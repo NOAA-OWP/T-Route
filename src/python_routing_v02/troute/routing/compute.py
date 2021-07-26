@@ -83,8 +83,8 @@ def compute_nhd_routing_v02(
                     path_func = partial(
                         nhd_network.split_at_waterbodies_and_junctions,
                         list(waterbodies_df.index.values),
-                        rconn_subn
-                        )
+                        rconn_subn,
+                    )
                 reaches_ordered_bysubntw[order][
                     subn_tw
                 ] = nhd_network.dfs_decomposition(rconn_subn, path_func)
@@ -157,13 +157,13 @@ def compute_nhd_routing_v02(
                                 offnetwork_upstreams.add(us)
 
                     segs.extend(offnetwork_upstreams)
-                    
+
                     common_segs = list(param_df.index.intersection(segs))
                     wbodies_segs = set(segs).symmetric_difference(common_segs)
-                    
-                    #Declare empty dataframe
+
+                    # Declare empty dataframe
                     waterbody_types_df_sub = pd.DataFrame()
-                
+
                     if not waterbodies_df.empty:
                         lake_segs = list(waterbodies_df.index.intersection(segs))
                         waterbodies_df_sub = waterbodies_df.loc[
@@ -182,8 +182,8 @@ def compute_nhd_routing_v02(
                                 "h0",
                             ],
                         ]
-                        
-                        #If reservoir types other than Level Pool are active
+
+                        # If reservoir types other than Level Pool are active
                         if not waterbody_types_df.empty:
                             waterbody_types_df_sub = waterbody_types_df.loc[
                                 lake_segs,
@@ -195,16 +195,16 @@ def compute_nhd_routing_v02(
                     else:
                         lake_segs = []
                         waterbodies_df_sub = pd.DataFrame()
-                    
+
                     param_df_sub = param_df.loc[
                         common_segs,
                         ["dt", "bw", "tw", "twcc", "dx", "n", "ncc", "cs", "s0", "alt"],
                     ].sort_index()
-                    
+
                     param_df_sub_super = param_df_sub.reindex(
                         param_df_sub.index.tolist() + lake_segs
                     ).sort_index()
-                    
+
                     if order < max(subnetworks_only_ordered_jit.keys()):
                         for us_subn_tw in offnetwork_upstreams:
                             subn_tw_sortposition = param_df_sub_super.index.get_loc(
@@ -229,7 +229,7 @@ def compute_nhd_routing_v02(
                     else:
                         usgs_df_sub = pd.DataFrame()
                         nudging_positions_list = []
-                        
+
                     subn_reach_list_with_type = []
                     for reaches in subn_reach_list:
                         if set(reaches) & wbodies_segs:
@@ -241,26 +241,31 @@ def compute_nhd_routing_v02(
 
                         subn_reach_list_with_type.append(reach_and_type_tuple)
 
-
                     last_obs_sub = pd.DataFrame()
 
                     qlat_sub = qlats.loc[param_df_sub.index]
                     q0_sub = q0.loc[param_df_sub.index]
-                    
-                    #Determine model_start_time from qlat_start_time
+
+                    # Determine model_start_time from qlat_start_time
                     qlat_start_time = list(qlat_sub)[0]
 
                     qlat_time_step_seconds = qts_subdivisions * dt
 
-                    if not isinstance(qlat_start_time,datetime):
-                        qlat_start_time_datetime_object = datetime.strptime(qlat_start_time, '%Y-%m-%d %H:%M:%S')
+                    if not isinstance(qlat_start_time, datetime):
+                        qlat_start_time_datetime_object = datetime.strptime(
+                            qlat_start_time, "%Y-%m-%d %H:%M:%S"
+                        )
                     else:
-                        qlat_start_time_datetime_object =  qlat_start_time
+                        qlat_start_time_datetime_object = qlat_start_time
 
-                    model_start_time_datetime_object = qlat_start_time_datetime_object \
-                    - timedelta(seconds=qlat_time_step_seconds)
+                    model_start_time_datetime_object = (
+                        qlat_start_time_datetime_object
+                        - timedelta(seconds=qlat_time_step_seconds)
+                    )
 
-                    model_start_time = model_start_time_datetime_object.strftime('%Y-%m-%d_%H:%M:%S')
+                    model_start_time = model_start_time_datetime_object.strftime(
+                        "%Y-%m-%d_%H:%M:%S"
+                    )
 
                     param_df_sub = param_df_sub.reindex(
                         param_df_sub.index.tolist() + lake_segs
@@ -281,7 +286,7 @@ def compute_nhd_routing_v02(
                             param_df_sub.values,
                             q0_sub.values.astype("float32"),
                             qlat_sub.values.astype("float32"),
-                            lake_segs, 
+                            lake_segs,
                             waterbodies_df_sub.values,
                             waterbody_parameters,
                             waterbody_types_df_sub.values.astype("int32"),
@@ -354,8 +359,8 @@ def compute_nhd_routing_v02(
                     path_func = partial(
                         nhd_network.split_at_waterbodies_and_junctions,
                         list(waterbodies_df.index.values),
-                        rconn_subn
-                        )
+                        rconn_subn,
+                    )
                 reaches_ordered_bysubntw[order][
                     subn_tw
                 ] = nhd_network.dfs_decomposition(rconn_subn, path_func)
@@ -385,13 +390,13 @@ def compute_nhd_routing_v02(
                                 offnetwork_upstreams.add(us)
 
                     segs.extend(offnetwork_upstreams)
-                    
+
                     common_segs = list(param_df.index.intersection(segs))
                     wbodies_segs = set(segs).symmetric_difference(common_segs)
-                    
-                    #Declare empty dataframe
+
+                    # Declare empty dataframe
                     waterbody_types_df_sub = pd.DataFrame()
-                
+
                     if not waterbodies_df.empty:
                         lake_segs = list(waterbodies_df.index.intersection(segs))
                         waterbodies_df_sub = waterbodies_df.loc[
@@ -410,8 +415,8 @@ def compute_nhd_routing_v02(
                                 "h0",
                             ],
                         ]
-                        
-                        #If reservoir types other than Level Pool are active
+
+                        # If reservoir types other than Level Pool are active
                         if not waterbody_types_df.empty:
                             waterbody_types_df_sub = waterbody_types_df.loc[
                                 lake_segs,
@@ -423,16 +428,16 @@ def compute_nhd_routing_v02(
                     else:
                         lake_segs = []
                         waterbodies_df_sub = pd.DataFrame()
-                    
+
                     param_df_sub = param_df.loc[
                         common_segs,
                         ["dt", "bw", "tw", "twcc", "dx", "n", "ncc", "cs", "s0", "alt"],
                     ].sort_index()
-                    
+
                     param_df_sub_super = param_df_sub.reindex(
                         param_df_sub.index.tolist() + lake_segs
                     ).sort_index()
-                    
+
                     if order < max(subnetworks_only_ordered_jit.keys()):
                         for us_subn_tw in offnetwork_upstreams:
                             subn_tw_sortposition = param_df_sub_super.index.get_loc(
@@ -454,7 +459,7 @@ def compute_nhd_routing_v02(
                     else:
                         usgs_df_sub = pd.DataFrame()
                         nudging_positions_list = []
-                        
+
                     subn_reach_list_with_type = []
                     for reaches in subn_reach_list:
                         if set(reaches) & wbodies_segs:
@@ -470,21 +475,27 @@ def compute_nhd_routing_v02(
 
                     qlat_sub = qlats.loc[param_df_sub.index]
                     q0_sub = q0.loc[param_df_sub.index]
-                    
-                    #Determine model_start_time from qlat_start_time
+
+                    # Determine model_start_time from qlat_start_time
                     qlat_start_time = list(qlat_sub)[0]
 
                     qlat_time_step_seconds = qts_subdivisions * dt
 
-                    if not isinstance(qlat_start_time,datetime):
-                        qlat_start_time_datetime_object = datetime.strptime(qlat_start_time, '%Y-%m-%d %H:%M:%S')
+                    if not isinstance(qlat_start_time, datetime):
+                        qlat_start_time_datetime_object = datetime.strptime(
+                            qlat_start_time, "%Y-%m-%d %H:%M:%S"
+                        )
                     else:
-                        qlat_start_time_datetime_object =  qlat_start_time
+                        qlat_start_time_datetime_object = qlat_start_time
 
-                    model_start_time_datetime_object = qlat_start_time_datetime_object \
-                    - timedelta(seconds=qlat_time_step_seconds)
+                    model_start_time_datetime_object = (
+                        qlat_start_time_datetime_object
+                        - timedelta(seconds=qlat_time_step_seconds)
+                    )
 
-                    model_start_time = model_start_time_datetime_object.strftime('%Y-%m-%d_%H:%M:%S')
+                    model_start_time = model_start_time_datetime_object.strftime(
+                        "%Y-%m-%d_%H:%M:%S"
+                    )
 
                     param_df_sub = param_df_sub.reindex(
                         param_df_sub.index.tolist() + lake_segs
@@ -563,7 +574,7 @@ def compute_nhd_routing_v02(
                 # Assumes everything else is a waterbody...
                 wbodies_segs = set(segs).symmetric_difference(common_segs)
 
-                #Declare empty dataframe
+                # Declare empty dataframe
                 waterbody_types_df_sub = pd.DataFrame()
 
                 # If waterbody parameters exist
@@ -588,7 +599,7 @@ def compute_nhd_routing_v02(
                         ],
                     ]
 
-                    #If reservoir types other than Level Pool are active
+                    # If reservoir types other than Level Pool are active
                     if not waterbody_types_df.empty:
                         waterbody_types_df_sub = waterbody_types_df.loc[
                             lake_segs,
@@ -636,20 +647,26 @@ def compute_nhd_routing_v02(
                 qlat_sub = qlats.loc[param_df_sub.index]
                 q0_sub = q0.loc[param_df_sub.index]
 
-                #Determine model_start_time from qlat_start_time
+                # Determine model_start_time from qlat_start_time
                 qlat_start_time = list(qlat_sub)[0]
 
                 qlat_time_step_seconds = qts_subdivisions * dt
 
-                if not isinstance(qlat_start_time,datetime):
-                    qlat_start_time_datetime_object = datetime.strptime(qlat_start_time, '%Y-%m-%d %H:%M:%S')
+                if not isinstance(qlat_start_time, datetime):
+                    qlat_start_time_datetime_object = datetime.strptime(
+                        qlat_start_time, "%Y-%m-%d %H:%M:%S"
+                    )
                 else:
-                    qlat_start_time_datetime_object =  qlat_start_time
+                    qlat_start_time_datetime_object = qlat_start_time
 
-                model_start_time_datetime_object = qlat_start_time_datetime_object \
-                - timedelta(seconds=qlat_time_step_seconds)
+                model_start_time_datetime_object = (
+                    qlat_start_time_datetime_object
+                    - timedelta(seconds=qlat_time_step_seconds)
+                )
 
-                model_start_time = model_start_time_datetime_object.strftime('%Y-%m-%d_%H:%M:%S')
+                model_start_time = model_start_time_datetime_object.strftime(
+                    "%Y-%m-%d_%H:%M:%S"
+                )
 
                 param_df_sub = param_df_sub.reindex(
                     param_df_sub.index.tolist() + lake_segs
@@ -697,7 +714,7 @@ def compute_nhd_routing_v02(
             # Assumes everything else is a waterbody...
             wbodies_segs = set(segs).symmetric_difference(common_segs)
 
-            #Declare empty dataframe
+            # Declare empty dataframe
             waterbody_types_df_sub = pd.DataFrame()
 
             # If waterbody parameters exist
@@ -722,7 +739,7 @@ def compute_nhd_routing_v02(
                     ],
                 ]
 
-                #If reservoir types other than Level Pool are active
+                # If reservoir types other than Level Pool are active
                 if not waterbody_types_df.empty:
                     waterbody_types_df_sub = waterbody_types_df.loc[
                         lake_segs,
@@ -763,20 +780,26 @@ def compute_nhd_routing_v02(
             qlat_sub = qlats.loc[param_df_sub.index]
             q0_sub = q0.loc[param_df_sub.index]
 
-            #Determine model_start_time from qlat_start_time
+            # Determine model_start_time from qlat_start_time
             qlat_start_time = list(qlat_sub)[0]
 
             qlat_time_step_seconds = qts_subdivisions * dt
 
-            if not isinstance(qlat_start_time,datetime):
-                qlat_start_time_datetime_object = datetime.strptime(qlat_start_time, '%Y-%m-%d %H:%M:%S')
+            if not isinstance(qlat_start_time, datetime):
+                qlat_start_time_datetime_object = datetime.strptime(
+                    qlat_start_time, "%Y-%m-%d %H:%M:%S"
+                )
             else:
-                qlat_start_time_datetime_object =  qlat_start_time
+                qlat_start_time_datetime_object = qlat_start_time
 
-            model_start_time_datetime_object = qlat_start_time_datetime_object \
-            - timedelta(seconds=qlat_time_step_seconds)
+            model_start_time_datetime_object = (
+                qlat_start_time_datetime_object
+                - timedelta(seconds=qlat_time_step_seconds)
+            )
 
-            model_start_time = model_start_time_datetime_object.strftime('%Y-%m-%d_%H:%M:%S')
+            model_start_time = model_start_time_datetime_object.strftime(
+                "%Y-%m-%d_%H:%M:%S"
+            )
 
             param_df_sub = param_df_sub.reindex(
                 param_df_sub.index.tolist() + lake_segs
