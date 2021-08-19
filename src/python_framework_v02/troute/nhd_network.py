@@ -524,6 +524,9 @@ def replace_waterbodies_connections(connections, waterbodies):
     return new_conn
 
 
+# TO DO: 
+# - add if statement check to Q.extend
+# more descriptive variable names
 def build_subnetworks(connections, rconn, min_size, sources=None):
     """
     Construct subnetworks using a truncated breadth-first-search
@@ -548,7 +551,6 @@ def build_subnetworks(connections, rconn, min_size, sources=None):
     for net in sources:
 
         # subnetwork creation using a breadth first search restricted by maximum allowable depth
-        # new_sources_list = [net]
         new_sources = set([net])
         subnetworks = {}
         group_order = 0
@@ -561,22 +563,29 @@ def build_subnetworks(connections, rconn, min_size, sources=None):
                 reachable = set()
                 Q = deque([(h, 0)])
                 stop_depth = 1000000
+                
                 while Q:
-
-                    x, y = Q.popleft()
-                    reachable.add(x)
-
-                    rx = rconn.get(x, ())
-                    if len(rx) > 1:
-                        us_depth = y + 1
-                    else:
-                        us_depth = y
-
-                    if len(reachable) > min_size:
-                        stop_depth = y
-
-                    if us_depth <= stop_depth:
-                        Q.extend(zip(rx, [us_depth] * len(rx)))
+                    
+                    # pop node and it's topological depth from Q, add node to reachable list
+                    node, depth = Q.popleft()
+                    reachable.add(node)
+                    
+                    # get upstream connections of current node
+                    us_nodes = rconn.get(node, ())
+                    
+                    # extend Q if there are nodes upstream
+                    if len(us_nodes) > 0:  
+                        # upstream depth increases if a junction is traversed
+                        if len(us_nodes) > 1:
+                            us_depth = depth + 1
+                        else:
+                            us_depth = depth
+                        # enforce minimum subnetwork size requirement
+                        if len(reachable) > min_size:
+                            stop_depth = depth
+                        # extend Q with upstream nodes and their topological depths
+                        if us_depth <= stop_depth:
+                            Q.extend(zip(us_nodes, [us_depth] * len(us_nodes)))
 
                 # reachable: a list of reachable segments within max_depth from source node h
                 rv[h] = reachable
