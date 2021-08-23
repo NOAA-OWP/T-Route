@@ -1,0 +1,114 @@
+---
+# Initial input parameters
+run_parameters:
+    parallel_compute_method: by-subnetwork-diffusive
+    compute_kernel: diffusive
+    verbose: true
+    showtiming: true
+    debuglevel: 1
+    break_network_at_waterbodies: true
+    assume_short_ts: true
+    subnetwork_target_size: 100
+    qts_subdivisions: 12
+    return_courant: false
+    dt: 300
+    nts: 24
+    cpu_pool: 12
+# Output file parameters
+output_parameters:
+    #output location for csv file 
+    csv_output:
+        csv_output_folder: "../../test/output/text"
+        csv_output_segments: []
+    #out location for nc file
+    nc_output_folder: "../../test/output/text"
+# Data column assignment inside supernetwork_parameters
+supernetwork_parameters:
+    title_string: falls_lake_diff_levelpool
+    geo_file_path: "../../test/input/falls_lake/DOMAIN/Route_Link.nc"
+    mask_file_path: "../../test/input/geo/Channels/masks/Falls_Lake_FULL_RES.txt"
+    mask_layer_string: ""
+    mask_driver_string: "txt"
+    mask_key: 0
+    columns:
+        key: "link"
+        downstream: "to"
+        dx: "Length"
+        n: "n"  # TODO: rename to `manningn`
+        ncc: "nCC"  # TODO: rename to `mannningncc`
+        s0: "So"  # TODO: rename to `bedslope`
+        bw: "BtmWdth"  # TODO: rename to `bottomwidth`
+        waterbody: "NHDWaterbodyComID"
+        tw: "TopWdth"  # TODO: rename to `topwidth`
+        twcc: "TopWdthCC"  # TODO: rename to `topwidthcc`
+        musk: "MusK"
+        musx: "MusX"
+        cs: "ChSlp"  # TODO: rename to `sideslope`
+        alt: "alt"   # added for diffusive routing
+    waterbody_null_code: -9999
+    terminal_code: 0
+    driver_string: NetCDF
+    layer_string: 0
+
+#waterbody parameters and assignments from lake parm file
+waterbody_parameters:
+    level_pool:
+        #WRF-Hydro lake parm file
+        level_pool_waterbody_parameter_file_path: "../../test/input/falls_lake/DOMAIN/LAKEPARM.nc"
+        level_pool_waterbody_id: lake_id
+        level_pool_waterbody_area: LkArea
+        level_pool_weir_elevation: WeirE
+        level_pool_waterbody_max_elevation: LkMxE
+        level_pool_outfall_weir_coefficient: WeirC
+        level_pool_outfall_weir_length: WeirL
+        level_pool_overall_dam_length: DamL
+        level_pool_orifice_elevation: OrificeE
+        level_pool_orifice_coefficient: OrificeC
+        level_pool_orifice_area: OrificeA
+    
+# Q-Lateral inputs from hydrology model
+forcing_parameters:
+    qlat_input_file: "../../test/input/falls_lake/FORCING/Falls_Lake_Qlateral_wDates.csv"
+    # WRF-Hydro files in comments below for example
+    # qlat_input_folder: "../../test/input/florence_933020089/Full_Model_Run/OUTPUT/"
+    # qlat_file_pattern_filter: "/201809*.CHRTOUT_DOMAIN1"
+    # qlat_file_index_col: feature_id
+    # qlat_file_value_col: q_lateral
+# Warm state files from prior simulations
+restart_parameters:
+    channel_restart_file: "/glade/u/home/jhreha/t-route/src/python_routing_v02/wrf_hydro_channel_restart_file.csv"
+    #wrf_hydro_channel_restart_file: "../../test/input/falls_lake/RESTART/HYDRO_RST.2018-09-01_00_00_DOMAIN1"
+    # #WRF-Hydro channels ID crosswalk file
+    #wrf_hydro_channel_ID_crosswalk_file:  "../../test/input/falls_lake/DOMAIN/Route_Link.nc"
+    wrf_hydro_channel_ID_crosswalk_file_field_name: link
+    wrf_hydro_channel_restart_upstream_flow_field_name: qlink1
+    wrf_hydro_channel_restart_downstream_flow_field_name: qlink2
+    wrf_hydro_channel_restart_depth_flow_field_name: hlink
+    # #WRF-Hydro waterbodies restart file
+    wrf_hydro_waterbody_restart_file: "../../test/input/falls_lake/RESTART/HYDRO_RST.2018-09-01_00_00_DOMAIN1"
+    #WRF-Hydro waterbody ID crosswalk file
+    wrf_hydro_waterbody_ID_crosswalk_file: "../../test/input/falls_lake/DOMAIN/LAKEPARM.nc"
+    wrf_hydro_waterbody_ID_crosswalk_file_field_name: lake_id
+    #WRF-Hydro waterbody crosswalk filter file
+    wrf_hydro_waterbody_crosswalk_filter_file: "../../test/input/falls_lake/DOMAIN/Route_Link.nc"
+    wrf_hydro_waterbody_crosswalk_filter_file_field_name: NHDWaterbodyComID
+# Output files to check parity
+parity_parameters:
+    parity_check_file: "../../test/input/florence_933020089/OUTPUT/SeptemberFlorenceStreamflow_wDates.csv" 
+    parity_check_compare_node: 8777403 # just above Falle Lake inlet, below Lake Michie
+    # WRF-Hydro files in comments below for example
+    # parity_check_input_folder: "../../test/input/florence_933020089/Full_Model_Run/OUTPUT/"
+    # parity_check_file_pattern_filter: "/201809*.CHRTOUT_DOMAIN1"
+    # parity_check_file_index_col: feature_id
+    # parity_check_file_value_col: streamflow
+diffusive_parameters:
+    normaldepth_lookuptable_main_increment_number: 20  # the total number of sub-intervals of water depth in main channel for creating normaldepth(or uniform flow) lookup table
+    normaldepth_lookuptable_floodplain_increment_number: 20  # the total number of sub-intervals of water depth in floodplain for creating normaldepth(or uniform flow) lookup table
+    normaldepth_lookuptable_depth_multiplier: 10 # a multiplier of depth in floodplain for covering large depth events
+    fortran_nework_map_col_number: 8 # the number of columns in fortran network map: For one-based index, this number less 4 is the maximum number of upstream reaches the fortran nework map (=frnw) can store.
+    courant_number_upper_limit: 0.9 # the upper limit of courant number: strictly observed in simulation timestep changing method while less strictly in simulation timestep fixed method.
+    theta_parameter: 1.0 # internal parameter of Fortran diffusive model
+    chgeo_computation_flag: 1 # In computing channel geometries and hydraulic features, value 0 leads to use lookup tables while value 1 to use explicit equations in Fortran model.
+    water_elevation_computation_flag: 1 # **Temporary flag: For testing purpose, value 1 enforces normal depth all the time while value 2 diffusive depth. It will not need soon as new schemes will automatically switch between the two depth compuatations.
+    bed_slope_lower_limit: 0.0001 # To account for too small bed slopes in Route_Link.nc especially those of segments underlying ponds or reservoirs,  this limit replaces the small slopes.
+
