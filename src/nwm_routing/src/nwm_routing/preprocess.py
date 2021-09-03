@@ -50,7 +50,7 @@ def nwm_network_preprocess(
     # waterbodies_values = supernetwork_values[12]
     # waterbodies_segments = supernetwork_values[13]
     # connections_tailwaters = supernetwork_values[4]
-
+    waterbody_type_specified = False
     if break_network_at_waterbodies:
         # Read waterbody parameters
         waterbodies_df = nhd_io.read_waterbody_df(
@@ -73,8 +73,6 @@ def nwm_network_preprocess(
 
         wbtype="level_pool"
         wb_params_level_pool = waterbody_parameters.get(wbtype, defaultdict(list))  # TODO: Convert these to `get` statments
-
-        waterbody_type_specified = False
 
         # NOTE: What are we accomplishing with this logic here?
         if wb_params_hybrid_and_rfc["reservoir_persistence_usgs"] \
@@ -177,6 +175,11 @@ def nwm_initial_warmstate_preprocess(
                 len(waterbodies_initial_states_df)
             )
 
+        # TODO: Does this need to live outside the if-block for waterbodies above? If not, let's move it up there to keep things together.
+        waterbodies_df = pd.merge(
+            waterbodies_df, waterbodies_initial_states_df, on="lake_id"
+        )
+
         if verbose:
             print("waterbody initial states complete")
         if showtiming:
@@ -190,17 +193,13 @@ def nwm_initial_warmstate_preprocess(
         print("setting channel initial states ...")
 
     q0 = nnu.build_channel_initial_state(restart_parameters, segment_index)
-
+    
     if verbose:
         print("channel initial states complete")
     if showtiming:
         print("... in %s seconds." % (time.time() - start_time))
         start_time = time.time()
 
-    # TODO: Does this need to live outside the if-block for waterbodies above? If not, let's move it up there to keep things together.
-    waterbodies_df = pd.merge(
-        waterbodies_df, waterbodies_initial_states_df, on="lake_id"
-    )
 
     last_obs_file = restart_parameters.get("wrf_hydro_last_obs_file", None)
     last_obs_df = pd.DataFrame()
@@ -253,7 +252,7 @@ def nwm_forcing_preprocess(
         print("qlateral array complete")
     if showtiming:
         print("... in %s seconds." % (time.time() - start_time))
-
+    
     # STEP 6
     data_assimilation_csv = data_assimilation_parameters.get(
         "data_assimilation_csv", None

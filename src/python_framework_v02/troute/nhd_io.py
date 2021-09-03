@@ -611,7 +611,13 @@ def get_usgs_from_time_slices_csv(routelink_subset_file, usgs_csv):
 def get_usgs_from_time_slices_folder(
     routelink_subset_file, usgs_timeslices_folder, data_assimilation_filter
 ):
-    usgs_files = sorted(usgs_timeslices_folder.glob(data_assimilation_filter))
+    if type(data_assimilation_filter) == str:
+        usgs_files = sorted(usgs_timeslices_folder.glob(data_assimilation_filter))
+    else:
+        usgs_files = []
+        
+        for file in data_assimilation_filter:
+            usgs_files.append(str(usgs_timeslices_folder)+"/"+file)
 
     with read_netcdfs(usgs_files, "time", preprocess_time_station_index,) as ds2:
         df2 = pd.DataFrame(
@@ -949,3 +955,21 @@ def build_coastal_ncdf_dataframe(coastal_ncdf):
     with xr.open_dataset(coastal_ncdf) as ds:
         coastal_ncdf_df = ds[["elev", "depth"]]
         return coastal_ncdf_df.to_dataframe()
+
+def build_da_date_range(data_assimilation_parameters):
+    
+    data_assimilation_start = data_assimilation_parameters['data_assimilation_sets']['data_assimilation_start_file']
+    data_assimilation_end = data_assimilation_parameters['data_assimilation_sets']['data_assimilation_end_file']
+    file_tail = data_assimilation_start[13:]
+    #may need refinement to make more robust if naming convention changes
+    date_time_str = data_assimilation_start[:13]
+    date_time_obj_start = datetime.strptime(date_time_str, "%Y-%m-%d_%H")
+
+    date_time_str = data_assimilation_end[:13]
+    date_time_obj_end = datetime.strptime(date_time_str, "%Y-%m-%d_%H")
+
+    dates = []
+    # for j in pd.date_range(date_time_obj_start, date_time_obj_end + timedelta(1), freq="5min"):
+    for j in pd.date_range(date_time_obj_start, date_time_obj_end, freq="1H"):
+        dates.append(j.strftime("%Y-%m-%d_%H:%M:00")+str(file_tail))
+    return dates

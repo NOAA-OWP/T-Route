@@ -1,0 +1,155 @@
+---
+#initial input parameters
+log_parameters:
+    verbose: true  # verbose output (leave blank for quiet output.)
+    showtiming: true  # set the showtiming (omit flag for no timing information.)
+    debuglevel: 1  # set the debuglevel for additional console output.
+network_topology_parameters:
+    supernetwork_parameters:
+        title_string: "Florence_FullRes with Nudging in Forecast Mode"
+        geo_file_path: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/forecasts/cast_2018091800/NWM/DOMAIN/Route_Link.nc"
+        mask_file_path: "/glade/u/home/jhreha/t-route/test/input/florence_933020089/DOMAIN/florence_fullres_mask_tw10975909_gage8777381.txt"
+        mask_layer_string: ""
+        mask_driver_string: "csv"
+        mask_key: 0
+        columns:
+            key: "link"
+            downstream: "to"
+            dx: "Length"
+            n: "n"  # TODO: rename to `manningn`
+            ncc: "nCC"  # TODO: rename to `mannningncc`
+            s0: "So"  # TODO: rename to `bedslope`
+            bw: "BtmWdth"  # TODO: rename to `bottomwidth`
+            waterbody: "NHDWaterbodyComID"
+            tw: "TopWdth"  # TODO: rename to `topwidth`
+            twcc: "TopWdthCC"  # TODO: rename to `topwidthcc`
+            alt: "alt"
+            musk: "MusK"
+            musx: "MusX"
+            cs: "ChSlp"  # TODO: rename to `sideslope`
+        waterbody_null_code: -9999
+        terminal_code: 0
+        driver_string: NetCDF
+        layer_string: 0
+    #waterbody parameters and assignments from lake parm file
+    waterbody_parameters:
+        break_network_at_waterbodies: false # replace waterbodies in the route-link dataset with segments representing the reservoir and calculate to divide the computation (leave blank for no splitting.)
+                              # TODO: Remove the following limitation
+                              # WARNING: `break_network_at_waterbodies: true` will only work if compute_kernel is set to "V02-structured-obj" and parallel_compute_method is unset (serial execution) or set to "by-network".
+        level_pool:
+            #WRF-Hydro lake parm file
+            level_pool_waterbody_parameter_file_path: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/forecasts/cast_2018091800/NWM/DOMAIN/LAKEPARM.nc"
+            level_pool_waterbody_id: lake_id
+            level_pool_waterbody_area: LkArea
+            level_pool_weir_elevation: WeirE
+            level_pool_waterbody_max_elevation: LkMxE
+            level_pool_outfall_weir_coefficient: WeirC
+            level_pool_outfall_weir_length: WeirL
+            level_pool_overall_dam_length: DamL
+            level_pool_orifice_elevation: OrificeE
+            level_pool_orifice_coefficient: OrificeC
+            level_pool_orifice_area: OrificeA
+compute_parameters:
+    # parallel_compute_method: by-network  # OPTIONS: <omit flag for serial execution>, "by-network", "by-subnetwork-jit", "by-subnetwork-jit-clustered"
+    # compute_subnetwork_target_size: 100  # by-subnetwork* requires a value here to identify the target subnetwork size.
+    # compute_kernel: V02-diffusive-dummy  # OPTIONS: "V02-caching", "V02-structured-obj", "V02-structured", "V02-diffusive-dummy"
+    compute_kernel: V02-structured  # OPTIONS: "V02-caching", "V02-structured-obj", "V02-structured", "V02-diffusive-dummy"
+    assume_short_ts: true  # use the previous timestep value for both current and previous flow.
+    return_courant: false  # WARNING: true will only work with compute_kernel "V02-caching", therefore not currently compatible with simulation for waterbodies.
+    #WRF-Hydro restart files
+    restart_parameters:
+        #WRF-Hydro channels restart file
+        wrf_hydro_channel_restart_file: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/run_nudging_nwm_channel-only/HYDRO_RST.2018-09-18_00:00_DOMAIN1"
+        #WRF-Hydro channels ID crosswalk file
+        wrf_hydro_channel_ID_crosswalk_file: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/forecasts/cast_2018091800/NWM/DOMAIN/Route_Link.nc"
+        wrf_hydro_channel_ID_crosswalk_file_field_name: link
+        wrf_hydro_channel_restart_upstream_flow_field_name: qlink1
+        wrf_hydro_channel_restart_downstream_flow_field_name: qlink2
+        wrf_hydro_channel_restart_depth_flow_field_name: hlink
+        #WRF-Hydro waterbodies restart file
+        wrf_hydro_waterbody_restart_file: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/run_nudging_nwm_channel-only/HYDRO_RST.2018-09-18_00:00_DOMAIN1"
+        #WRF-Hydro waterbody ID crosswalk file
+        wrf_hydro_waterbody_ID_crosswalk_file: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/forecasts/cast_2018091800/NWM/DOMAIN/LAKEPARM.nc"
+        wrf_hydro_waterbody_ID_crosswalk_file_field_name: lake_id
+        #WRF-Hydro waterbody crosswalk filter file
+        wrf_hydro_waterbody_crosswalk_filter_file: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/forecasts/cast_2018091800/NWM/DOMAIN/Route_Link.nc"
+        wrf_hydro_waterbody_crosswalk_filter_file_field_name: NHDWaterbodyComID
+    #Qlateral forcing values
+    forcing_parameters:
+        # coastal_boundary_elev_data: "../../test/input/geo/coastal_inputs/staout_1"
+        # coastal_ncdf: "../../test/input/geo/coastal_inputs/SandySample.nc"
+        # split_forcing: true
+        qts_subdivisions: 12  # number of timesteps per forcing (qlateral) timestep.
+        dt: 300  # default timestep length, seconds
+        qlat_input_folder: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/forecasts/cast_2018091800"
+        qlat_file_index_col: feature_id
+        qlat_file_value_col: q_lateral
+        # TODO: Presently, an explicit definition of these sets
+        # means the least ambiguity in how we intend to set things up.
+        # a more sophisticated algorithm could accept a glob list
+        # and break that up according to some `qlat_forcing_configuration`
+        # but for now, we'll use this.
+        qlat_forcing_sets:
+            - qlat_files:
+                - 201809180100.CHRTOUT_DOMAIN1
+                - 201809180200.CHRTOUT_DOMAIN1
+                - 201809180300.CHRTOUT_DOMAIN1
+                - 201809180400.CHRTOUT_DOMAIN1
+              nts: 48  # number of timesteps to simulate. If used with ql_file or ql_folder, nts must be less than the number of ql inputs x qts_subdivisions.
+            - qlat_files:
+                - 201809180500.CHRTOUT_DOMAIN1
+                - 201809180600.CHRTOUT_DOMAIN1
+              nts: 24
+    data_assimilation_parameters:
+        data_assimilation_timeslices_folder: "/glade/work/jamesmcc/domains/private/florence_v21/NWM/nudgingTimeSliceObs_calibration"
+        data_assimilation_sets:
+            data_assimilation_start_file: "2018-09-18_00.15min.usgsTimeSlice.ncdf"
+            data_assimilation_end_file: "2018-09-18_06.15min.usgsTimeSlice.ncdf"
+            data_assimilation_run_block_size: 4
+            # - data_assimilation_subset: "2018-09-18_0[0-4]*.15min.usgsTimeSlice.ncdf"
+            # - data_assimilation_subset: "2018-09-18_0[4-6]*.15min.usgsTimeSlice.ncdf"
+        wrf_hydro_da_channel_ID_crosswalk_file: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/forecasts/cast_2018091800/NWM/DOMAIN/Route_Link.nc"
+        wrf_hydro_last_obs_file: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/run_nudging_nwm_channel-only/nudgingLastObs.2018-09-18_00:00:00.nc"
+        wrf_hydro_last_obs_lead_time_relative_to_simulation_start_time: 0
+        wrf_last_obs_type: "obs-based"
+        da_decay_coefficient: 120
+#output file parameters
+output_parameters:
+    chrtout_output:
+        # Write t-route data to WRF-Hydro restart files
+        wrf_hydro_channel_output_folder: "/glade/u/home/jhreha/t-route/test/input/geo/CONUS/"
+        wrf_hydro_channel_output_file_pattern_filter: "*.CHRTOUT_DOMAIN1"
+        wrf_hydro_channel_output_new_extension: "TROUTE"
+    hydro_rst_output:
+        # Write t-route data to WRF-Hydro CHRTOUT files
+        wrf_hydro_channel_restart_directory: "/glade/u/home/jhreha/t-route/test/input/geo/CONUS/"
+        wrf_hydro_channel_restart_pattern_filter: "HYDRO_RST.*"
+        wrf_hydro_channel_restart_new_extension: "TROUTE"
+    network_output:
+        supernetwork_stats: true
+    #output location for csv file
+    csv_output:
+        csv_output_folder: "/glade/u/home/jhreha/t-route/test/output/text/"
+        csv_output_segments: [4185713, 2743396, 4153198, 4186293, 4186169]
+    #out location for nc file
+    nc_output_folder: "/glade/u/home/jhreha/t-route/test/output/text/"
+    #WRF-Hydro output file
+    wrf_hydro_parity_check:
+        parity_check_input_folder: "/glade/scratch/jamesmcc/tmp_florence_run_nudging/forecasts/cast_2018091800/"
+        # parity_check_file_pattern_filter: "*.CHRTOUT_DOMAIN1"
+        parity_check_file_index_col: feature_id
+        parity_check_file_value_col: streamflow
+        parity_check_compare_node: 8777381
+        parity_check_compare_file_sets:
+            - validation_files:
+                - 201809180100.CHRTOUT_DOMAIN1
+                - 201809180200.CHRTOUT_DOMAIN1
+                - 201809180300.CHRTOUT_DOMAIN1
+                - 201809180400.CHRTOUT_DOMAIN1
+            - validation_files:
+                - 201809180500.CHRTOUT_DOMAIN1
+                - 201809180600.CHRTOUT_DOMAIN1
+        # parity_check_compare_node: 2743396
+        # parity_check_compare_node: 4185265
+        # Tailwaters [2743396, 2743016, 4153198, 4185713, 4186293]
+...
