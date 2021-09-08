@@ -33,8 +33,8 @@ output_parameters:
     nc_output_folder: "../../test/output/text"
 # Data column assignment inside supernetwork_parameters
 supernetwork_parameters:
-    title_string: Florencee_updated_repo_test #Custom Input Example (using Florence-Event Cutout datafile)
-    geo_file_path: "../../test/input/florence_933020089/DOMAIN/Route_Link.nc"
+    title_string: Refactored_test_meters_check #Custom Input Example (using Florence-Event Cutout datafile)
+    geo_file_path: "../../test/input/florence_933020089/DOMAIN/nhdplus_reconciled_500_10975909_params_meters_check.gpkg"
     # mask_file_path: "../../test/input/geo/Channels/masks/933020089_mask.csv"
     mask_layer_string: ""
     mask_driver_string: "csv"
@@ -56,8 +56,8 @@ supernetwork_parameters:
         alt: "alt"   # added for diffusive routing
     waterbody_null_code: -9999
     terminal_code: 0
-    driver_string: NetCDF
-    layer_string: 0
+    driver_string: GPKG
+    layer_string: Refactored
 # Q-Lateral inputs from hydrology model
 forcing_parameters:
     #qlat_input_file: "../../test/input/florence_933020089/FORCING/SeptemberFlorenceQlateral_wDates.csv"
@@ -90,9 +90,9 @@ restart_parameters: {}
     # wrf_hydro_waterbody_crosswalk_filter_file: "../../test/input/florence_933020089/DOMAIN/Route_Link.nc"
     # wrf_hydro_waterbody_crosswalk_filter_file_field_name: NHDWaterbodyComID
 # Output files to check parity
-parity_parameters: 
-    parity_check_file: "../../test/input/florence_933020089/OUTPUT/SeptemberFlorenceStreamflow_wDates.csv"
-    parity_check_compare_node: 8777701
+parity_parameters: {}
+    # parity_check_file: "../../test/input/florence_933020089/OUTPUT/SeptemberFlorenceStreamflow_wDates.csv"
+    # parity_check_compare_node: 5652
     # WRF-Hydro files in comments below for example
     # parity_check_input_folder: "../../test/input/florence_933020089/Full_Model_Run/OUTPUT/"
     # parity_check_file_pattern_filter: "/201809*.CHRTOUT_DOMAIN1"

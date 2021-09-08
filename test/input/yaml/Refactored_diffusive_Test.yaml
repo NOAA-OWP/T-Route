@@ -1,8 +1,8 @@
 ---
 # Initial input parameters
 run_parameters:
-    compute_kernel: "diffusive"
-    parallel_compute_method: None
+    parallel_compute_method: serial # by-subnetwork-jit-clustered
+    compute_kernel: diffusive #V02-structured V02-caching
     verbose: true
     showtiming: true
     debuglevel: 1
@@ -11,7 +11,7 @@ run_parameters:
     qts_subdivisions: 12
     return_courant: false
     dt: 300
-    nts: 24
+    nts: 288
     cpu_pool: 12
     #Use the parallel computation engine (omit flag for serial computation)
     #Verbose output (leave blank for quiet output)
@@ -25,17 +25,17 @@ run_parameters:
     #Set the number of timesteps to execute. If used with ql_file or ql_folder, nts must be less than len(ql) x qN.
 # Output file parameters
 output_parameters:
-    #output location for csv file 
+    #output location for csv file
     csv_output:
-#         csv_output_folder: None
-        csv_output_segments: None
+        csv_output_folder: "../../test/output/text"
+        csv_output_segments: [4185713, 2743396, 4153198, 4186293, 4186169]
     #out location for nc file
-    nc_output_folder: None
+    nc_output_folder: "../../test/output/text"
 # Data column assignment inside supernetwork_parameters
 supernetwork_parameters:
-    title_string: Custom Input Example (using Florence-Event Cutout datafile)
-    geo_file_path: "../../test/input/florence_933020089/DOMAIN/Route_Link.nc"
-    mask_file_path: "../../test/input/geo/Channels/masks/933020089_mask.csv"
+    title_string: Refactored_test_meters_check #Custom Input Example (using Florence-Event Cutout datafile)
+    geo_file_path: "../../test/input/florence_933020089/DOMAIN/nhdplus_reconciled_500_10975909_params_meters_check.gpkg"
+    # mask_file_path: "../../test/input/geo/Channels/masks/933020089_mask.csv"
     mask_layer_string: ""
     mask_driver_string: "csv"
     mask_key: 0
@@ -56,34 +56,21 @@ supernetwork_parameters:
         alt: "alt"   # added for diffusive routing
     waterbody_null_code: -9999
     terminal_code: 0
-    driver_string: NetCDF
-    layer_string: 0
-# Waterbody parameters and assignments from lake parm file
-waterbody_parameters:
-    level_pool:
-        #WRF-Hydro lake parm file
-        level_pool_waterbody_parameter_file_path: "../../test/input/florence_933020089/DOMAIN/LAKEPARM.nc"
-        level_pool_waterbody_id: lake_id
-        level_pool_waterbody_area: LkArea
-        level_pool_weir_elevation: WeirE
-        level_pool_waterbody_max_elevation: LkMxE
-        level_pool_outfall_weir_coefficient: WeirC
-        level_pool_outfall_weir_length: WeirL
-        level_pool_overall_dam_length: DamL
-        level_pool_orifice_elevation: OrificeE
-        level_pool_orifice_coefficient: OrificeC
-        level_pool_orifice_area: OrificeA
+    driver_string: GPKG
+    layer_string: Refactored
 # Q-Lateral inputs from hydrology model
 forcing_parameters:
-    qlat_input_file: "../../test/input/florence_933020089/FORCING/SeptemberFlorenceQlateral_wDates.csv"
+    #qlat_input_file: "../../test/input/florence_933020089/FORCING/SeptemberFlorenceQlateral_wDates.csv"
+    qlat_const: 0.1
     # WRF-Hydro files in comments below for example
     # qlat_input_folder: "../../test/input/florence_933020089/Full_Model_Run/OUTPUT/"
     # qlat_file_pattern_filter: "/201809*.CHRTOUT_DOMAIN1"
     # qlat_file_index_col: feature_id
     # qlat_file_value_col: q_lateral
 # Warm state files from prior simulations
-restart_parameters:
-    channel_restart_file: "../../test/input/florence_933020089/RESTART/ChannelRestart_2018-09-01.csv"
+restart_parameters: {}
+    #channel_restart_file: "../../test/input/florence_933020089/RESTART/ChannelRestart_2018-09-01.csv"
+
     # WRF-Hydro files in comments below for example
     # wrf_hydro_channel_restart_file: "../../test/input/CONUS_benchmark/RESTART/RESTART.2018110100_DOMAIN1.znc"
     # wrf_hydro_channel_restart_file: "../../test/input/florence_933020089/RESTART/HYDRO_RST.2018-09-01_00_00_DOMAIN1"
@@ -103,22 +90,22 @@ restart_parameters:
     # wrf_hydro_waterbody_crosswalk_filter_file: "../../test/input/florence_933020089/DOMAIN/Route_Link.nc"
     # wrf_hydro_waterbody_crosswalk_filter_file_field_name: NHDWaterbodyComID
 # Output files to check parity
-parity_parameters:
-#     parity_check_file: None
-    parity_check_compare_node: None
+parity_parameters: {}
+    # parity_check_file: "../../test/input/florence_933020089/OUTPUT/SeptemberFlorenceStreamflow_wDates.csv"
+    # parity_check_compare_node: 5652
     # WRF-Hydro files in comments below for example
     # parity_check_input_folder: "../../test/input/florence_933020089/Full_Model_Run/OUTPUT/"
     # parity_check_file_pattern_filter: "/201809*.CHRTOUT_DOMAIN1"
     # parity_check_file_index_col: feature_id
     # parity_check_file_value_col: streamflow
 diffusive_parameters:
-    # the link among usgsID, link2usgsID, and paramterCd is based on integer position in the list.    
+    # the link among usgsID, link2usgsID, and paramterCd is based on integer position in the list.
     usgsID: [02087182] # TODO: id with multiple leading zeros are not read correctly.
     link2usgsID: [933020089]
-    # '00060' for discharge [ft^3/s]  
+    # '00060' for discharge [ft^3/s]
     # '00065' for stage [ft]
     # '62614' for Elevation, lake/res,NGVD29 [ft]
-    usgs_parameterCd: ['62614']    
+    usgs_parameterCd: ['62614']
     usgs_start_date: '2018-09-01'
     usgs_end_date: '2018-09-02'
     usgs_retrievaltool_path: "./nwis_client"
@@ -131,12 +118,10 @@ diffusive_parameters:
     simulation_end_hr: 2.0  # simulation end time in hr
     normaldepth_lookuptable_main_increment_number: 20  # the total number of sub-intervals of water depth in main channel for creating normaldepth(or uniform flow) lookup table
     normaldepth_lookuptable_floodplain_increment_number: 20  # the total number of sub-intervals of water depth in floodplain for creating normaldepth(or uniform flow) lookup table
-    normaldepth_lookuptable_depth_multiplier: 10 # a multiplier of depth in floodplain for covering large depth events 
+    normaldepth_lookuptable_depth_multiplier: 10 # a multiplier of depth in floodplain for covering large depth events
     fortran_nework_map_col_number: 8 # the number of columns in fortran network map: For one-based index, this number less 4 is the maximum number of upstream reaches the fortran nework map (=frnw) can store.
     courant_number_upper_limit: 0.9 # the upper limit of courant number: strictly observed in simulation timestep changing method while less strictly in simulation timestep fixed method.
     theta_parameter: 1.0 # internal parameter of Fortran diffusive model
     chgeo_computation_flag: 1 # In computing channel geometries and hydraulic features, value 0 leads to use lookup tables while value 1 to use explicit equations in Fortran model.
     water_elevation_computation_flag: 1 # **Temporary flag: For testing purpose, value 1 enforces normal depth all the time while value 2 diffusive depth. It will not need soon as new schemes will automatically switch between the two depth compuatations.
     bed_slope_lower_limit: 0.0001 # To account for too small bed slopes in Route_Link.nc especially those of segments underlying ponds or reservoirs,  this limit replaces the small slopes.
-
-
