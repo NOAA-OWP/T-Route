@@ -1,6 +1,5 @@
-from libc.math cimport exp, isnan
+from libc.math cimport exp, isnan, NAN
 from libc.stdio cimport printf
-
 
 cpdef float simple_da_with_decay_py(
     const float last_valid_obs,
@@ -51,6 +50,11 @@ cdef (float, float, float, float) simple_da(
         # add/update lastobs_timestep
         lastobs_time = (timestep) * routing_period
         lastobs_val = target_val
+    if ((isnan(target_val)) and (isnan(lastobs_val))):
+        replacement_val = model_val
+        nudge_val = 0.0
+        lastobs_val = NAN
+        lastobs_time = NAN
     else:
         if da_check_gage:
             printf("So we are fixing that...\t")
