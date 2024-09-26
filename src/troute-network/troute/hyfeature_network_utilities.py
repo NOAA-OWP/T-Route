@@ -1,14 +1,9 @@
-import json
 import pathlib
-from functools import partial
-from datetime import datetime, timedelta
 import logging
 import os
 
 import pandas as pd
 import numpy as np
-import netCDF4
-from joblib import delayed, Parallel
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -211,13 +206,13 @@ def build_forcing_sets(
     max_loop_size      = forcing_parameters.get("max_loop_size", 12)
     dt                 = forcing_parameters.get("dt", None)
 
-    try:
+    if nexus_input_folder is not None:
         nexus_input_folder = pathlib.Path(nexus_input_folder)
-        assert nexus_input_folder.is_dir() == True
-    except TypeError:
-        raise TypeError("Aborting simulation because no nexus_input_folder is specified in the forcing_parameters section of the .yaml control file.") from None
-    except AssertionError:
-        raise AssertionError("Aborting simulation because the nexus_input_folder:", qlat_input_folder,"does not exist. Please check the the nexus_input_folder variable is correctly entered in the .yaml control file") from None
+        if not nexus_input_folder.is_dir():
+            raise ValueError(f"Aborting simulation because the nexus_input_folder: {nexus_input_folder} does not exist. Please check the the nexus_input_folder variable is correctly entered in the .yaml control file")
+    else:
+        raise TypeError("Aborting simulation because no nexus_input_folder is specified in the forcing_parameters section of the .yaml control file.")
+    
 
     forcing_glob_filter = forcing_parameters.get("nexus_file_pattern_filter", "*.NEXOUT")
 
@@ -228,11 +223,16 @@ def build_forcing_sets(
 
         #Check that directory/files specified will work
         if not binary_folder:
-            raise(RuntimeError("No output binary qlat folder supplied in config"))
+            raise RuntimeError("No output binary qlat folder supplied in config")
         elif not os.path.exists(binary_folder):
-            raise(RuntimeError("Output binary qlat folder supplied in config does not exist"))
-        elif len(list(pathlib.Path(binary_folder).glob('*.parquet'))) != 0:
-            raise(RuntimeError("Output binary qlat folder supplied in config is not empty (already contains '.parquet' files)"))
+            raise RuntimeError("Output binary qlat folder supplied in config does not exist")
+
+        try:
+            next(pathlib.Path(binary_folder).glob('*.parquet'))
+            raise RuntimeError("Output binary qlat folder supplied in config is not empty (already contains '.parquet' files)")
+        except StopIteration:
+            # Directory is empty
+            pass
 
         #Add tnx for backwards compatability
         nexus_files_list = list(nexus_files) + list(nexus_input_folder.glob('tnx*.csv'))
@@ -255,6 +255,7 @@ def build_forcing_sets(
             run_sets[s]['final_timestamp'] = \
                 datetime.strptime(final_timestamp_str, '%Y-%m-%d_%H:%M:%S')
         '''  
+        pass
     elif nexus_input_folder:        
         # Construct run_set dictionary from user-specified parameters
 
@@ -266,12 +267,10 @@ def build_forcing_sets(
 
         # Deduce the timeinterval of the forcing data from the output timestamps of the first
         # two ordered CHRTOUT files
-        df     = read_file(first_file)
-        t1_str = pd.to_datetime(df.columns[1]).strftime("%Y-%m-%d_%H:%M:%S")
-        t1     = datetime.strptime(t1_str,"%Y-%m-%d_%H:%M:%S")
-        df     = read_file(second_file)
-        t2_str = pd.to_datetime(df.columns[1]).strftime("%Y-%m-%d_%H:%M:%S")
-        t2     = datetime.strptime(t2_str,"%Y-%m-%d_%H:%M:%S")
+        df = read_file(first_file)
+        t1 = pd.to_datetime(df.columns[1])
+        df = read_file(second_file)
+        t2 = pd.to_datetime(df.columns[1])
         dt_qlat_timedelta = t2 - t1
         dt_qlat = dt_qlat_timedelta.seconds
 
@@ -290,37 +289,30 @@ def build_forcing_sets(
         #                 range(nfiles)]
         # ** Correction ** Because qlat file at time t is constantly applied throughout [t, t+1],
         #               ** n + 1 should be replaced by n
-        datetime_list = [t0 + dt_qlat_timedelta * (n) for n in
-                         range(nfiles)]        
-        datetime_list_str = [datetime.strftime(d, '%Y%m%d%H%M') for d in
-                             datetime_list]
+        # Existence of each file is checked, raising an error if an expected file is missing.
+        forcing_filenames = []
+        for n in range(nfiles):
+            fn_dt = (t0 + dt_qlat_timedelta * n).strftime("%Y%m%d%H%M")
+            fn = nexus_input_folder.joinpath(fn_dt + forcing_glob_filter[1:])
+            if fn.is_file():
+                forcing_filenames.append(fn)
+            else:
+                raise FileNotFoundError(f"Forcing file {fn} is missing. Aborting simulation.")
 
-        # list of forcing files
-        forcing_filename_list = [d_str + forcing_glob_filter[1:] for d_str in
-                                 datetime_list_str]
-        
-        # check that all forcing files exist
-        for f in forcing_filename_list:
-            try:
-                J = pathlib.Path(nexus_input_folder.joinpath(f))     
-                assert J.is_file() == True
-            except AssertionError:
-                raise AssertionError("Aborting simulation because forcing file", J, "cannot be not found.") from None
-                
         # build run sets list
         run_sets = []
         k = 0
         j = 0
         nts_accum = 0
         nts_last = 0
-        while k < len(forcing_filename_list):
+        while k < len(forcing_filenames):
             run_sets.append({})
 
-            if k + max_loop_size < len(forcing_filename_list):
-                run_sets[j]['nexus_files'] = forcing_filename_list[k:k
+            if k + max_loop_size < len(forcing_filenames):
+                run_sets[j]['nexus_files'] = forcing_filenames[k:k
                     + max_loop_size]
             else:
-                run_sets[j]['nexus_files'] = forcing_filename_list[k:]
+                run_sets[j]['nexus_files'] = forcing_filenames[k:]
 
             nts_accum += len(run_sets[j]['nexus_files']) * qts_subdivisions
             if nts_accum <= nts:
@@ -329,15 +321,11 @@ def build_forcing_sets(
             else:
                 run_sets[j]['nts'] = int(nts - nts_last)
 
-            final_nexout        = nexus_input_folder.joinpath(run_sets[j]['nexus_files'
-                    ][-1])            
+            final_nexout = nexus_input_folder.joinpath(run_sets[j]['nexus_files'][-1]) 
             #final_timestamp_str = nhd_io.get_param_str(final_nexout,
             #        'model_output_valid_time')
-            df                  = read_file(final_nexout)
-            final_timestamp_str = pd.to_datetime(df.columns[1]).strftime("%Y-%m-%d_%H:%M:%S")           
-            
-            run_sets[j]['final_timestamp'] = \
-                datetime.strptime(final_timestamp_str, '%Y-%m-%d_%H:%M:%S')
+            df = read_file(final_nexout)
+            run_sets[j]['final_timestamp'] = pd.to_datetime(df.columns[1])
 
             nts_last = nts_accum
             k += max_loop_size
@@ -489,5 +477,6 @@ def read_file(file_name):
     elif extension=='.parquet':
         df = pq.read_table(file_name).to_pandas().reset_index()
         df.index.name = None
-    
+    else:
+        raise ValueError(f"Unknown file suffix: {extension}")
     return df
