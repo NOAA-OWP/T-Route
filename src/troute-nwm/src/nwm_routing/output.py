@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import troute.nhd_io as nhd_io
 from build_tests import parity_check
 import logging
-
+from troute.nhd_io import updated_flowveldepth
 
 LOG = logging.getLogger('')
 
@@ -47,7 +47,7 @@ def _reindex_lake_to_link_id(target_df, crosswalk):
     return target_df
 
 
-def _parquet_output_format_converter(df, start_datetime, dt, configuration, prefix_ids):
+def _parquet_output_format_converter(df, start_datetime, dt, configuration, prefix_ids, nexus_dict):
     '''
     Utility function for convert flowveldepth dataframe
     to a timeseries and to match parquet input format
@@ -64,13 +64,24 @@ def _parquet_output_format_converter(df, start_datetime, dt, configuration, pref
     --------
     - timeseries_df (DataFrame): Converted timeseries data frame
     '''
+    nex_id = {}
+    if prefix_ids == 'nex' and nexus_dict:
+        for key, val in nexus_dict.items():
+            nex_key = int(key.split('-')[-1])
+            nex_id[nex_key] = [int(v.split('-')[-1]) for v in val] 
+    
+    df = updated_flowveldepth(df, nex_id, seg_id = list(), mask_list = None)
+    df = df.reset_index().drop('Type', axis=1).set_index('featureID')
     variable_to_name_map = {"q": "streamflow", "d": "depth", "v": "velocity"}
     variable_to_units_map = {"streamflow": "m3/s", "velocity": "m/s", "depth": "m"}
 
     # Prepare the location_id with prefix
     df.index.name = 'location_id'
     df.reset_index(inplace=True)
-    location_ids = prefix_ids + '-' + df['location_id'].astype(str)
+    if nexus_dict:
+        location_ids = prefix_ids + '-' + df['location_id'].astype(str)
+    else:
+        location_ids = df['location_id'].astype(str)    
 
     # Flatten the dataframe using NumPy
     num_locations = df.shape[0]
@@ -502,7 +513,7 @@ def nwm_output_generator(
         configuration = output_parameters["parquet_output"].get("configuration")
         prefix_ids = output_parameters["parquet_output"].get("prefix_ids")
         timeseries_df = _parquet_output_format_converter(flowveldepth, restart_parameters.get("start_datetime"), dt,
-                                                         configuration, prefix_ids)
+                                                         configuration, prefix_ids, nexus_dict)
 
         parquet_output_segments_str = [prefix_ids + '-' + str(segment) for segment in parquet_output_segments]
         timeseries_df.loc[timeseries_df['location_id'].isin(parquet_output_segments_str)].to_parquet(
