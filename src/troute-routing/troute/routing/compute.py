@@ -11,8 +11,11 @@ import os.path
 
 import troute.nhd_network as nhd_network
 from troute.routing.fast_reach.mc_reach import compute_network_structured
+from troute.routing.fast_reach.hybrid_routing_reach import compute_network_structured_with_hybrid_routing
+
 import troute.routing.diffusive_utils_v02 as diff_utils
 from troute.routing.fast_reach import diffusive
+from troute.routing.fast_reach import chxsec_lookuptable
 
 import logging
 
@@ -22,6 +25,7 @@ _compute_func_map = defaultdict(
     compute_network_structured,
     {
         "V02-structured": compute_network_structured,
+        "V02-structured-hybrid-routing": compute_network_structured_with_hybrid_routing,
     },
 )
 
@@ -539,10 +543,13 @@ def compute_nhd_routing_v02(
     data_assimilation_parameters,
     waterbody_types_df,
     waterbody_type_specified,
-    subnetwork_list,
+    subnetwork_list, 
+    diffusive_network_data,
+    topobathy,
+    coastal_boundary_depth_df,
     flowveldepth_interorder = {},
     from_files = True,
-):
+    ):
 
     da_decay_coefficient = da_parameter_dict.get("da_decay_coefficient", 0)
     param_df["dt"] = dt
@@ -550,6 +557,7 @@ def compute_nhd_routing_v02(
     
     start_time = time.time()
     compute_func = _compute_func_map[compute_func_name]
+
     if parallel_compute_method == "by-subnetwork-jit-clustered":
         
         # Create subnetwork objects if they have not already been created
@@ -797,7 +805,7 @@ def compute_nhd_routing_v02(
                         from_files,
                         offnetwork_upstreams
                     )
-                    
+
                     # results_subn[order].append(
                     #     compute_func(
                     jobs.append(
@@ -1322,7 +1330,7 @@ def compute_nhd_routing_v02(
                     waterbody_types_df_sub, 
                     t0,
                     from_files,
-                    set()
+                    offnetwork_upstreams=set(), # TODO: need to be defined.
                     )
 
                 jobs.append(
@@ -1508,7 +1516,7 @@ def compute_nhd_routing_v02(
                 t0,
                 from_files,
                 )
-            
+
             results.append(
                 compute_func(
                     nts,
@@ -1732,6 +1740,347 @@ def compute_nhd_routing_v02(
                     },
                     assume_short_ts,
                     return_courant,
+                )
+            )
+
+    elif parallel_compute_method == "serial-hybrid-routing":
+
+        results = []
+        for twi, (tw, reach_list) in enumerate(reaches_bytw.items(), 1):
+            # The X_sub lines use SEGS...
+            # which becomes invalid with the wbodies included.
+            # So we define "common_segs" to identify regular routing segments
+            # and wbodies_segs for the waterbody reaches/segments
+            segs = list(chain.from_iterable(reach_list))
+            common_segs = param_df.index.intersection(segs)
+            # Assumes everything else is a waterbody...
+            wbodies_segs = set(segs).symmetric_difference(common_segs)
+
+            #Declare empty dataframe
+            waterbody_types_df_sub = pd.DataFrame()
+
+            # If waterbody parameters exist
+            if not waterbodies_df.empty:
+
+                lake_segs = list(waterbodies_df.index.intersection(segs))
+
+                waterbodies_df_sub = waterbodies_df.loc[
+                    lake_segs,
+                    [
+                        "LkArea",
+                        "LkMxE",
+                        "OrificeA",
+                        "OrificeC",
+                        "OrificeE",
+                        "WeirC",
+                        "WeirE",
+                        "WeirL",
+                        "ifd",
+                        "qd0",
+                        "h0",
+                    ],
+                ]
+
+                #If reservoir types other than Level Pool are active
+                if not waterbody_types_df.empty:
+                    waterbody_types_df_sub = waterbody_types_df.loc[
+                        lake_segs,
+                        [
+                            "reservoir_type",
+                        ],
+                    ]
+
+            else:
+                lake_segs = []
+                waterbodies_df_sub = pd.DataFrame()
+
+            param_df_sub = param_df.loc[
+                common_segs,
+                ["dt", "bw", "tw", "twcc", "dx", "n", "ncc", "cs", "s0", "alt"],
+            ].sort_index()
+
+            reaches_list_with_type = _build_reach_type_list(reach_list, wbodies_segs)
+
+            # qlat_sub = qlats.loc[common_segs].sort_index()
+            # q0_sub = q0.loc[common_segs].sort_index()
+            qlat_sub = qlats.loc[param_df_sub.index]
+            q0_sub = q0.loc[param_df_sub.index]
+
+            param_df_sub = param_df_sub.reindex(
+                param_df_sub.index.tolist() + lake_segs
+            ).sort_index()
+
+            usgs_df_sub, lastobs_df_sub, da_positions_list_byseg = _prep_da_dataframes(usgs_df, lastobs_df, param_df_sub.index)
+            da_positions_list_byreach, da_positions_list_bygage = _prep_da_positions_byreach(reach_list, lastobs_df_sub.index)
+
+            qlat_sub = qlat_sub.reindex(param_df_sub.index)
+            q0_sub = q0_sub.reindex(param_df_sub.index)
+            '''
+            # prepare reservoir DA data
+            (reservoir_usgs_df_sub, 
+             reservoir_usgs_df_time,
+             reservoir_usgs_update_time,
+             reservoir_usgs_prev_persisted_flow,
+             reservoir_usgs_persistence_update_time,
+             reservoir_usgs_persistence_index,
+             reservoir_usace_df_sub, 
+             reservoir_usace_df_time,
+             reservoir_usace_update_time,
+             reservoir_usace_prev_persisted_flow,
+             reservoir_usace_persistence_update_time,
+             reservoir_usace_persistence_index,
+             reservoir_rfc_df_sub, 
+             reservoir_rfc_totalCounts, 
+             reservoir_rfc_file, 
+             reservoir_rfc_use_forecast, 
+             reservoir_rfc_timeseries_idx, 
+             reservoir_rfc_update_time, 
+             reservoir_rfc_da_timestep, 
+             reservoir_rfc_persist_days,
+             waterbody_types_df_sub,
+             ) = _prep_reservoir_da_dataframes(
+                reservoir_usgs_df,
+                reservoir_usgs_param_df,
+                reservoir_usace_df, 
+                reservoir_usace_param_df,
+                reservoir_rfc_df,
+                reservoir_rfc_param_df,
+                waterbody_types_df_sub, 
+                t0,
+                from_files,
+                )
+            '''
+            # prepare reservoir DA data
+            (reservoir_usgs_df_sub, 
+             reservoir_usgs_df_time,
+             reservoir_usgs_update_time,
+             reservoir_usgs_prev_persisted_flow,
+             reservoir_usgs_persistence_update_time,
+             reservoir_usgs_persistence_index,
+             reservoir_usace_df_sub, 
+             reservoir_usace_df_time,
+             reservoir_usace_update_time,
+             reservoir_usace_prev_persisted_flow,
+             reservoir_usace_persistence_update_time,
+             reservoir_usace_persistence_index,
+             reservoir_rfc_df_sub, 
+             reservoir_rfc_totalCounts, 
+             reservoir_rfc_file, 
+             reservoir_rfc_use_forecast, 
+             reservoir_rfc_timeseries_idx, 
+             reservoir_rfc_update_time, 
+             reservoir_rfc_da_timestep, 
+             reservoir_rfc_persist_days,
+             gl_df_sub,
+             gl_parm_lake_id_sub, 
+             gl_param_flows_sub,
+             gl_param_time_sub,
+             gl_param_update_time_sub,
+             gl_climatology_df_sub,
+             waterbody_types_df_sub,
+             ) = _prep_reservoir_da_dataframes(
+                reservoir_usgs_df,
+                reservoir_usgs_param_df,
+                reservoir_usace_df, 
+                reservoir_usace_param_df,
+                reservoir_rfc_df,
+                reservoir_rfc_param_df,
+                great_lakes_df,
+                great_lakes_param_df,
+                great_lakes_climatology_df,
+                waterbody_types_df_sub, 
+                t0,
+                from_files,
+                )
+            
+            # prepare diffusive input data for running  hybrid routing
+            # A channel subnetwork within enumerate(reaches_bytw.items(), 1) may consist of 
+            # multiple diffusive domains, each separated by distinct tailwater segments.    
+            diffusive_tailwater_segments = []
+            diffusive_reaches_bytw= {}
+            nondiffusive_segments_bytw = {}
+            diffusive_segment2reach_and_segment_bottom_node_idx_bytw={}
+            diffusive_inputs_bytw = {}  
+            chxsec_lookuptable_bytw={}
+            chbottom_elevation_bytw = {}      
+            
+            if diffusive_network_data:
+                for diffusive_tw in diffusive_network_data: # <------- TODO - by-network parallel loop, here.
+                    found = any(diffusive_tw in sublist for sublist in reach_list)
+                    if found:
+
+                        diffusive_segments = diffusive_network_data[diffusive_tw]['mainstem_segs']
+                        
+                        # create DataFrame of junction inflow data            
+                        num_col = nts
+                        trib_segs = diffusive_network_data[diffusive_tw]['tributary_segments']
+                        junction_inflows = pd.DataFrame(np.zeros((len(trib_segs), num_col)), index=trib_segs, columns=[i for i in range(num_col)])
+                        
+                        if not topobathy.empty:
+                            # create topobathy data for diffusive mainstem segments of this given tw segment        
+                            topobathy_bytw               = topobathy.loc[diffusive_segments] 
+                            unrefactored_topobathy_bytw = pd.DataFrame()                    
+                        else:
+                            topobathy_bytw = pd.DataFrame()
+                            unrefactored_topobathy_bytw = pd.DataFrame()
+
+                        # diffusive streamflow DA activation switch
+                        if 'diffusive_streamflow_nudging' in da_parameter_dict:
+                            diffusive_usgs_df = usgs_df.loc[usgs_df.index.isin(diffusive_segments)]
+                        else:
+                            diffusive_usgs_df = pd.DataFrame()
+
+                        # tw in refactored hydrofabric (NOTE: refactored_hydrofabric not in use any more)
+                        refactored_diffusive_domain_bytw = None
+                        refactored_reaches_byrftw        = None
+                
+                        # coastal boundary depth input data at TW
+                        if tw in coastal_boundary_depth_df.index:
+                            coastal_boundary_depth_bytw_df = coastal_boundary_depth_df.loc[diffusive_tw].to_frame().T
+                        else:
+                            coastal_boundary_depth_bytw_df = pd.DataFrame()
+
+                        # temporary: column names of qlats from HYfeature are currently timestamps. To be consistent with qlats from NHD
+                        # the column names need to be changed to intergers from zero incrementing by 1
+                        diffusive_qlats = qlats.copy()
+                        diffusive_qlats = diffusive_qlats.loc[diffusive_segments]
+                        diffusive_qlats.columns = range(diffusive_qlats.shape[1])  
+    
+                        # build diffusive inputs
+                        diffusive_inputs = diff_utils.diffusive_input_data_v02(
+                            diffusive_tw,
+                            diffusive_network_data[diffusive_tw]['connections'],
+                            diffusive_network_data[diffusive_tw]['rconn'],
+                            diffusive_network_data[diffusive_tw]['reaches'],
+                            diffusive_network_data[diffusive_tw]['mainstem_segs'],
+                            diffusive_network_data[diffusive_tw]['tributary_segments'],
+                            None, # place holder for diffusive parameters
+                            diffusive_network_data[diffusive_tw]['param_df'],
+                            diffusive_qlats,
+                            q0,
+                            junction_inflows,
+                            qts_subdivisions,
+                            t0,
+                            nts,
+                            dt,
+                            waterbodies_df,
+                            topobathy_bytw,
+                            diffusive_usgs_df,
+                            refactored_diffusive_domain_bytw,
+                            refactored_reaches_byrftw, 
+                            coastal_boundary_depth_bytw_df,
+                            unrefactored_topobathy_bytw,
+                        )
+                        diffusive_inputs_bytw[diffusive_tw] = diffusive_inputs
+
+                        # diffusive segments and reaches
+                        diffusive_tailwater_segments.append(diffusive_tw)
+                        diffusive_reaches=[]
+                        diffusive_segments = diffusive_network_data[diffusive_tw]['mainstem_segs']
+                        nondiffusive_segments = diffusive_network_data[diffusive_tw]['tributary_segments']
+                        nondiffusive_segments_bytw[diffusive_tw] = nondiffusive_segments
+                    
+                        for sublist in reach_list:
+                            if any(item in sublist for item in diffusive_segments):
+                                diffusive_reaches.append(sublist)  
+                        diffusive_reaches_bytw[diffusive_tw] = diffusive_reaches       
+
+                        # Compute hydraulic value lookup tables for channel cross sections 
+                        out_chxsec_lookuptable, out_z_adj= chxsec_lookuptable.compute_chxsec_lookuptable(
+                                                                diffusive_inputs)
+                        chxsec_lookuptable_bytw[diffusive_tw] = out_chxsec_lookuptable
+                        chbottom_elevation_bytw[diffusive_tw] = out_z_adj
+ 
+                        # Create a dictionary mapping segment ID to a pair of Fotran segment node index and Fortran reach index
+                        diffusive_segment2reach_and_segment_bottom_node_idx = {}
+                        total_reaches = diffusive_reaches.copy()
+                        for seg in nondiffusive_segments:
+                            total_reaches.append([seg])
+
+                        for sublist in total_reaches:
+                            first_id = sublist[0]
+                            # find reach order index corresponding head segment id 
+                            for key, value in diffusive_inputs['pynw'].items():
+                                if value == first_id:
+                                    first_key = key
+                                    break
+                            # Iterate through the sublist and populate the results dictionary
+                            for index, id_value in enumerate(sublist):
+                                diffusive_segment2reach_and_segment_bottom_node_idx[id_value] = [first_key, index+1]                        
+                        diffusive_segment2reach_and_segment_bottom_node_idx_bytw[diffusive_tw] = diffusive_segment2reach_and_segment_bottom_node_idx
+
+            results.append(
+                compute_func(
+                    nts,
+                    dt,
+                    qts_subdivisions,
+                    reaches_list_with_type,
+                    independent_networks[tw],
+                    param_df_sub.index.values.astype("int64"),
+                    param_df_sub.columns.values,
+                    param_df_sub.values,
+                    q0_sub.values.astype("float32"),
+                    qlat_sub.values.astype("float32"),
+                    lake_segs,
+                    waterbodies_df_sub.values,
+                    data_assimilation_parameters,
+                    waterbody_types_df_sub.values.astype("int32"),
+                    waterbody_type_specified,
+                    t0.strftime('%Y-%m-%d_%H:%M:%S'),
+                    usgs_df_sub.values.astype("float32"),
+                    np.array(da_positions_list_byseg, dtype="int32"),
+                    np.array(da_positions_list_byreach, dtype="int32"),
+                    np.array(da_positions_list_bygage, dtype="int32"),
+                    lastobs_df_sub.get("lastobs_discharge", pd.Series(index=lastobs_df_sub.index, name="Null", dtype="float32")).values.astype("float32"),
+                    lastobs_df_sub.get("time_since_lastobs", pd.Series(index=lastobs_df_sub.index, name="Null", dtype="float32")).values.astype("float32"),
+                    da_decay_coefficient,
+                    # USGS Hybrid Reservoir DA data
+                    reservoir_usgs_df_sub.values.astype("float32"),
+                    reservoir_usgs_df_sub.index.values.astype("int32"),
+                    reservoir_usgs_df_time.astype('float32'),
+                    reservoir_usgs_update_time.astype('float32'),
+                    reservoir_usgs_prev_persisted_flow.astype('float32'),
+                    reservoir_usgs_persistence_update_time.astype('float32'),
+                    reservoir_usgs_persistence_index.astype('float32'),
+                    # USACE Hybrid Reservoir DA data
+                    reservoir_usace_df_sub.values.astype("float32"),
+                    reservoir_usace_df_sub.index.values.astype("int32"),
+                    reservoir_usace_df_time.astype('float32'),
+                    reservoir_usace_update_time.astype("float32"),
+                    reservoir_usace_prev_persisted_flow.astype("float32"),
+                    reservoir_usace_persistence_update_time.astype("float32"),
+                    reservoir_usace_persistence_index.astype("float32"),
+                    # RFC Reservoir DA data
+                    reservoir_rfc_df_sub.values.astype("float32"),
+                    reservoir_rfc_df_sub.index.values.astype("int32"),
+                    reservoir_rfc_totalCounts.astype("int32"),
+                    reservoir_rfc_file,
+                    reservoir_rfc_use_forecast.astype("int32"),
+                    reservoir_rfc_timeseries_idx.astype("int32"),
+                    reservoir_rfc_update_time.astype("float32"),
+                    reservoir_rfc_da_timestep.astype("int32"),
+                    reservoir_rfc_persist_days.astype("int32"),
+                    # Great Lakes DA data
+                    gl_df_sub.lake_id.values.astype("int32"),
+                    gl_df_sub.time.values.astype("int32"),
+                    gl_df_sub.Discharge.values.astype("float32"),
+                    gl_parm_lake_id_sub.astype("int32"),
+                    gl_param_flows_sub.astype("float32"),
+                    gl_param_time_sub.astype("int32"),
+                    gl_param_update_time_sub.astype("int32"),
+                    gl_climatology_df_sub.values.astype("float32"),
+                    # Diffusive wave routing data
+                    diffusive_tailwater_segments,  #diffusive_tw,                     
+                    diffusive_reaches_bytw,  #diffusive_reaches, 
+                    nondiffusive_segments_bytw,   #nondiffusive_segments,
+                    diffusive_segment2reach_and_segment_bottom_node_idx_bytw, #diffusive_segment2reach_and_segment_bottom_node_idx,                    
+                    diffusive_inputs_bytw,   #diffusive_inputs, 
+                    chxsec_lookuptable_bytw,  # out_chxsec_lookuptable,
+                    chbottom_elevation_bytw,  # out_z_adj,
+                    {},
+                    assume_short_ts,
+                    return_courant,
+                    from_files=from_files,
                 )
             )
 

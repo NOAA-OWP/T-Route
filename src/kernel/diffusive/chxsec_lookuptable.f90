@@ -1,6 +1,6 @@
 !-------------------------------------------------------------------------------
 module lookuptable
-
+  use precis
   IMPLICIT NONE
   
 !-----------------------------------------------------------------------------
@@ -16,20 +16,20 @@ module lookuptable
 !-----------------------------------------------------------------------------
   
   ! Module constants
-  double precision, parameter :: grav = 9.81
-  double precision, parameter :: TOLERANCE = 1e-8
+  real(prec), parameter :: grav = 9.81
+  real(prec), parameter :: TOLERANCE = 1e-8
   
   ! Module variables
   integer          :: nlinks
   integer          :: mxncomp
   integer          :: maxTableLength
   integer          :: nel
-  double precision :: so_llm
-  double precision :: z_g, bo_g, traps_g, tw_g, twcc_g, so_g, mann_g, manncc_g
+  real(prec) :: so_llm
+  real(prec) :: z_g, bo_g, traps_g, tw_g, twcc_g, so_g, mann_g, manncc_g
   integer, dimension(:,:),            allocatable :: size_bathy 
-  double precision, dimension(:,:),   allocatable :: z
-  double precision, dimension(:,:,:), allocatable :: x_bathy, z_bathy, mann_bathy 
-  double precision, dimension(:,:,:,:), allocatable :: xsec_tab
+  real(prec), dimension(:,:),   allocatable :: z
+  real(prec), dimension(:,:,:), allocatable :: x_bathy, z_bathy, mann_bathy 
+  real(prec), dimension(:,:,:,:), allocatable :: xsec_tab
   
 contains
 
@@ -77,22 +77,22 @@ contains
     integer, intent(in) :: frnw_col
     integer, intent(in) :: mxnbathy_g
     integer, intent(in) :: nrow_chxsec_lookuptable
-    double precision, intent(in) :: so_lowerlimit_g
+    real(prec), intent(in) :: so_lowerlimit_g
     integer, dimension(nrch_g, frnw_col), intent(in) :: frnw_ar_g
     integer, dimension(mxncomp_g, nrch_g), intent(in) :: size_bathy_g   
-    double precision, dimension(mxncomp_g,   nrch_g), intent(in) :: z_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g), intent(in) :: bo_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g), intent(in) :: traps_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g), intent(in) :: tw_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g), intent(in) :: twcc_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g), intent(in) :: mann_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g), intent(in) :: manncc_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g), intent(in) :: dx_ar_g
-    double precision, dimension(mxnbathy_g, mxncomp_g, nrch_g), intent(in) :: x_bathy_g
-    double precision, dimension(mxnbathy_g, mxncomp_g, nrch_g), intent(in) :: z_bathy_g
-    double precision, dimension(mxnbathy_g, mxncomp_g, nrch_g), intent(in) :: mann_bathy_g
-    double precision, dimension(11, nrow_chxsec_lookuptable, mxncomp_g, nrch_g), intent(out) :: chxsec_lookuptable
-    double precision, dimension(mxncomp_g, nrch_g), intent(out) :: z_adj
+    real(prec), dimension(mxncomp_g,   nrch_g), intent(in) :: z_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g), intent(in) :: bo_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g), intent(in) :: traps_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g), intent(in) :: tw_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g), intent(in) :: twcc_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g), intent(in) :: mann_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g), intent(in) :: manncc_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g), intent(in) :: dx_ar_g
+    real(prec), dimension(mxnbathy_g, mxncomp_g, nrch_g), intent(in) :: x_bathy_g
+    real(prec), dimension(mxnbathy_g, mxncomp_g, nrch_g), intent(in) :: z_bathy_g
+    real(prec), dimension(mxnbathy_g, mxncomp_g, nrch_g), intent(in) :: mann_bathy_g
+    real(prec), dimension(11, nrow_chxsec_lookuptable, mxncomp_g, nrch_g), intent(out) :: chxsec_lookuptable
+    real(prec), dimension(mxncomp_g, nrch_g), intent(out) :: z_adj
  
   ! Local variables    
     integer :: ncomp
@@ -109,16 +109,16 @@ contains
     integer, dimension(:), allocatable   :: dmy_frj
     integer, dimension(:),   allocatable :: mstem_frj
     integer, dimension(:,:), allocatable :: frnw_g
-    double precision :: timesDepth
-    !double precision :: t   
-    double precision :: slope
-    double precision :: convey
-    double precision, dimension(:,:), allocatable :: leftBank
-    double precision, dimension(:,:), allocatable :: rightBank
-    double precision, dimension(:,:), allocatable :: skLeft
-    double precision, dimension(:,:), allocatable :: skMain
-    double precision, dimension(:,:), allocatable :: skRight
-    double precision, dimension(:,:), allocatable :: dx
+    real(prec) :: timesDepth
+    !real(prec) :: t   
+    real(prec) :: slope
+    real(prec) :: convey
+    real(prec), dimension(:,:), allocatable :: leftBank
+    real(prec), dimension(:,:), allocatable :: rightBank
+    real(prec), dimension(:,:), allocatable :: skLeft
+    real(prec), dimension(:,:), allocatable :: skMain
+    real(prec), dimension(:,:), allocatable :: skRight
+    real(prec), dimension(:,:), allocatable :: dx
 
   !-----------------------------------------------------------------------------
   ! channel network data  
@@ -290,24 +290,24 @@ contains
     
     ! subroutine arguments
     integer,          intent(in) :: idx_node, idx_reach 
-    double precision, intent(in) :: timesDepth
+    real(prec), intent(in) :: timesDepth
     
     ! subroutine local variables
     integer          :: i_area, i_find, num
     integer          :: i1, i2
     integer          :: ic, iel, ii, ii2, iv, iel_start, iel_incr_start, iel_decr_start, ndmy
-    double precision :: el_min, el_max, el_range, el_incr, el_now, x1, y1, x2, y2, x_start, x_end
-    double precision :: f2m, cal_area, cal_peri, cal_topW
-    double precision :: mN_start, mN_end, cal_equiv_mann
-    double precision :: pos_slope, incr_rate, max_value  
+    real(prec) :: el_min, el_max, el_range, el_incr, el_now, x1, y1, x2, y2, x_start, x_end
+    real(prec) :: f2m, cal_area, cal_peri, cal_topW
+    real(prec) :: mN_start, mN_end, cal_equiv_mann
+    real(prec) :: pos_slope, incr_rate, max_value  
     integer,          dimension(:), allocatable :: i_start, i_end
-    double precision, dimension(:), allocatable :: x_bathy_leftzero
-    double precision, dimension(:), allocatable :: xcs, ycs, manncs
-    double precision, dimension(:), allocatable :: el1, a1, peri1, redi1, equiv_mann
-    double precision, dimension(:), allocatable :: redi1All
-    double precision, dimension(:), allocatable :: conv1, tpW1
-    double precision, dimension(:), allocatable :: newdKdA
-    double precision, dimension(:), allocatable :: compoundSKK, elev, dmyarr
+    real(prec), dimension(:), allocatable :: x_bathy_leftzero
+    real(prec), dimension(:), allocatable :: xcs, ycs, manncs
+    real(prec), dimension(:), allocatable :: el1, a1, peri1, redi1, equiv_mann
+    real(prec), dimension(:), allocatable :: redi1All
+    real(prec), dimension(:), allocatable :: conv1, tpW1
+    real(prec), dimension(:), allocatable :: newdKdA
+    real(prec), dimension(:), allocatable :: compoundSKK, elev, dmyarr
 
     allocate(el1(nel), a1(nel), peri1(nel), redi1(nel), redi1All(nel))
     allocate(equiv_mann(nel), conv1(nel), tpW1(nel))
@@ -558,7 +558,7 @@ contains
     deallocate(x_bathy_leftzero)
 
     contains
-      double precision function cal_dist_x_mann(x1, y1, x2, y2, mN)
+      real(prec) function cal_dist_x_mann(x1, y1, x2, y2, mN)
                 
         implicit none
         
@@ -568,16 +568,16 @@ contains
         !-----------------------------------------------------                
         
         ! function arguments
-        double precision, intent(in) :: x1, y1, x2, y2, mN
+        real(prec), intent(in) :: x1, y1, x2, y2, mN
         ! function local variable
-        double precision :: dist
+        real(prec) :: dist
 
         dist = sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + 1.e-32)
         cal_dist_x_mann = dist * mN**1.50
 
       end function cal_dist_x_mann
 
-      double precision function cal_peri_x_mann(xx, yy, mN, n, i1, i2)
+      real(prec) function cal_peri_x_mann(xx, yy, mN, n, i1, i2)
         
         implicit none
 
@@ -588,10 +588,10 @@ contains
         
         ! function arguments
         integer,          intent(in) :: n, i1, i2
-        double precision, intent(in) :: xx(n), yy(n), mN(n)
+        real(prec), intent(in) :: xx(n), yy(n), mN(n)
         ! function local variables
         integer          :: i
-        double precision :: x1, x2, y1, y2, mN1, pxmN
+        real(prec) :: x1, x2, y1, y2, mN1, pxmN
 
         pxmN = 0.0
 
@@ -626,29 +626,29 @@ contains
 
     ! subroutine arguments
     integer,                                        intent(in) :: k, num_reach, lmxncomp, lnlinks
-    double precision,                               intent(in) :: rmanning_main,lftBnkMann,rgtBnkMann
-    double precision,                               intent(in) :: leftBnkX_given,rghtBnkX_given, timesDepth
-    double precision, dimension(lmxncomp, lnlinks), intent(in) :: z_ar_g, bo_ar_g, traps_ar_g, tw_ar_g, twcc_ar_g
+    real(prec),                               intent(in) :: rmanning_main,lftBnkMann,rgtBnkMann
+    real(prec),                               intent(in) :: leftBnkX_given,rghtBnkX_given, timesDepth
+    real(prec), dimension(lmxncomp, lnlinks), intent(in) :: z_ar_g, bo_ar_g, traps_ar_g, tw_ar_g, twcc_ar_g
     
     ! subroutine local variables
     integer          :: i_area, i_find, i, j, jj, num  
     integer          :: i1, i2
     integer          :: mainChanStrt, mainChanEnd, kkk, startFound, endFound 
-    double precision :: el_min, el_max, el_range, el_incr, el_now
-    double precision :: x1, y1, x2, y2, x_start, x_end
-    double precision :: waterElev, leftBnkX,rghtBnkX
-    double precision :: f2m, cal_area, cal_peri, cal_topW,  diffAreaCenter
-    double precision :: compoundMann, el_min_1
-    double precision :: leftBnkY, rghtBnkY,rmanning
-    double precision :: hbf
+    real(prec) :: el_min, el_max, el_range, el_incr, el_now
+    real(prec) :: x1, y1, x2, y2, x_start, x_end
+    real(prec) :: waterElev, leftBnkX,rghtBnkX
+    real(prec) :: f2m, cal_area, cal_peri, cal_topW,  diffAreaCenter
+    real(prec) :: compoundMann, el_min_1
+    real(prec) :: leftBnkY, rghtBnkY,rmanning
+    real(prec) :: hbf
     integer, dimension(:),            allocatable :: i_start, i_end, totalNodes  
-    double precision, dimension(:),   allocatable :: xcs, ycs
-    double precision, dimension(:,:), allocatable :: el1, a1, peri1, redi1
-    double precision, dimension(:),   allocatable :: redi1All
-    double precision, dimension(:,:), allocatable :: conv1, tpW1, diffArea, newI1, diffPere
-    double precision, dimension(:),   allocatable :: newdPdA, diffAreaAll, diffPereAll, newdKdA       
-    double precision, dimension(:),   allocatable :: compoundSKK, elev
-    double precision, dimension(:,:), allocatable :: allXcs, allYcs
+    real(prec), dimension(:),   allocatable :: xcs, ycs
+    real(prec), dimension(:,:), allocatable :: el1, a1, peri1, redi1
+    real(prec), dimension(:),   allocatable :: redi1All
+    real(prec), dimension(:,:), allocatable :: conv1, tpW1, diffArea, newI1, diffPere
+    real(prec), dimension(:),   allocatable :: newdPdA, diffAreaAll, diffPereAll, newdKdA       
+    real(prec), dimension(:),   allocatable :: compoundSKK, elev
+    real(prec), dimension(:,:), allocatable :: allXcs, allYcs
 
     allocate(el1(nel,3), a1(nel,3), peri1(nel,3), redi1(nel,3), redi1All(nel))
     allocate(conv1(nel,3), tpW1(nel,3), diffArea(nel,3), newI1(nel,3), diffPere(nel,3))
@@ -948,7 +948,7 @@ contains
       xsec_tab(9, j, k, num_reach) = newdKdA(j)
       xsec_tab(11,j, k, num_reach) = compoundSKK(j)
     end do
-        
+      
     z(k, num_reach) = el_min
 
     deallocate(el1, a1, peri1, redi1, redi1All)
@@ -962,7 +962,7 @@ contains
 
   end subroutine readXsection
 
-  double precision function cal_tri_area(el, x0, x1, y1)
+  real(prec) function cal_tri_area(el, x0, x1, y1)
       
       implicit none
       
@@ -972,13 +972,13 @@ contains
       !----------------------------------------
       
       ! function arguments
-      doubleprecision, intent(in) :: el, x0, x1, y1
+      real(prec), intent(in) :: el, x0, x1, y1
 
       cal_tri_area = abs(0.5 * (x1 - x0) * (el - y1))
     
     end function cal_tri_area
 
-    double precision function cal_trap_area(el, x1, y1, x2, y2)
+    real(prec) function cal_trap_area(el, x1, y1, x2, y2)
       
       implicit none
 
@@ -987,13 +987,13 @@ contains
       !   calculate area of trapezoid
       !----------------------------------------
                 
-      doubleprecision, intent(in) :: el, x1, y1, x2, y2
+      real(prec), intent(in) :: el, x1, y1, x2, y2
 
       cal_trap_area = abs(0.5 * (x2 - x1) * (el - y1 + el - y2))
 
     end function cal_trap_area
 
-    double precision function cal_multi_area(el, xx, yy, n, i1, i2)
+    real(prec) function cal_multi_area(el, xx, yy, n, i1, i2)
     
       implicit none
 
@@ -1004,11 +1004,11 @@ contains
       
       ! function arguments
       integer,          intent(in) :: n, i1, i2
-      double precision, intent(in) :: el
-      double precision, intent(in) :: xx(n), yy(n)
+      real(prec), intent(in) :: el
+      real(prec), intent(in) :: xx(n), yy(n)
       ! function local variables
       integer          :: i
-      double precision :: area, x1, x2, y1, y2
+      real(prec) :: area, x1, x2, y1, y2
 
       area = 0.0
 
@@ -1024,7 +1024,7 @@ contains
     
     endfunction cal_multi_area
 
-    double precision function cal_dist(x1, y1, x2, y2)
+    real(prec) function cal_dist(x1, y1, x2, y2)
       
       implicit none
 
@@ -1034,13 +1034,13 @@ contains
       !------------------------------------------  
       
       ! function arguments
-      doubleprecision, intent(in) :: x1, y1, x2, y2
+      real(prec), intent(in) :: x1, y1, x2, y2
 
       cal_dist = sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + 1.e-32)
     
     end function cal_dist
 
-    double precision function cal_perimeter(xx,yy,n,i1,i2)
+    real(prec) function cal_perimeter(xx,yy,n,i1,i2)
       
       implicit none
         
@@ -1051,10 +1051,10 @@ contains
       
       ! function arguments
       integer,          intent(in) :: n, i1, i2
-      double precision, intent(in) :: xx(n), yy(n)
+      real(prec), intent(in) :: xx(n), yy(n)
       ! function local variables
       integer          :: i
-      double precision :: p, x1, x2, y1, y2
+      real(prec) :: p, x1, x2, y1, y2
 
       p = 0.
       
@@ -1069,5 +1069,4 @@ contains
       cal_perimeter=p
 
     end function cal_perimeter
-
 end module lookuptable

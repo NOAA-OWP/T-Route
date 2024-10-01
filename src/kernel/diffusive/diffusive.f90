@@ -1,6 +1,6 @@
 !-------------------------------------------------------------------------------
 module diffusive
-
+  use precis
   IMPLICIT NONE
   
 !-----------------------------------------------------------------------------
@@ -16,8 +16,8 @@ module diffusive
 !-----------------------------------------------------------------------------
   
   ! Module constants
-  double precision, parameter :: grav = 9.81
-  double precision, parameter :: TOLERANCE = 1e-8
+  real(prec), parameter :: grav = 9.81
+  real(prec), parameter :: TOLERANCE = 1e-8
   
   ! Module variables
   integer :: nlinks
@@ -38,41 +38,41 @@ module diffusive
   integer, dimension(:,:), allocatable :: routingNotChanged
   integer, dimension(:,:), allocatable :: frnw_g
   integer, dimension(:,:), allocatable :: size_bathy 
-  double precision :: dtini, dxini, cfl, minDx, maxCelerity,  theta
-  double precision :: C_llm, D_llm, D_ulm, DD_ulm, DD_llm, q_llm, so_llm
-  double precision :: frus2, minNotSwitchRouting, minNotSwitchRouting2
-  double precision :: dt_qtrib
-  double precision :: z_g, bo_g, traps_g, tw_g, twcc_g, so_g, mann_g, manncc_g
-  double precision :: dmyi, dmyj
-  double precision :: dtini_min
-  double precision, dimension(:),       allocatable :: eei, ffi, exi, fxi, qcx, diffusivity2, celerity2
-  double precision, dimension(:),       allocatable :: ini_y, ini_q
-  double precision, dimension(:),       allocatable :: lowerLimitCount, higherLimitCount
-  double precision, dimension(:),       allocatable :: elevTable, areaTable, skkkTable
-  double precision, dimension(:),       allocatable :: pereTable, rediTable
-  double precision, dimension(:),       allocatable :: convTable, topwTable
-  double precision, dimension(:),       allocatable :: nwi1Table, dPdATable
-  double precision, dimension(:),       allocatable :: ncompElevTable, ncompAreaTable
-  double precision, dimension(:),       allocatable :: currentSquareDepth
-  double precision, dimension(:),       allocatable :: tarr_qtrib, varr_qtrib
-  double precision, dimension(:),       allocatable :: tarr_da, varr_da
-  double precision, dimension(:),       allocatable :: area, depth, co, froud, courant
-  double precision, dimension(:,:),     allocatable :: bo, dx
-  double precision, dimension(:,:),     allocatable :: areap, qp, z, sk
-  double precision, dimension(:,:),     allocatable :: celerity, diffusivity, qpx  
-  double precision, dimension(:,:),     allocatable :: pere, oldQ, newQ, oldArea, newArea, oldY, newY  
-  double precision, dimension(:,:),     allocatable :: volRemain  
-  double precision, dimension(:,:),     allocatable :: lateralFlow
-  double precision, dimension(:,:),     allocatable :: dimensionless_Cr, dimensionless_Fo, dimensionless_Fi
-  double precision, dimension(:,:),     allocatable :: dimensionless_Di, dimensionless_Fc, dimensionless_D  
-  double precision, dimension(:,:),     allocatable :: qtrib 
-  double precision, dimension(:,:),     allocatable :: usgs_da
-  double precision, dimension(:,:,:),   allocatable :: x_bathy, z_bathy, mann_bathy 
-  double precision, dimension(:,:,:,:), allocatable :: xsec_tab
+  real(prec) :: dtini, dxini, cfl, minDx, maxCelerity,  theta
+  real(prec) :: C_llm, D_llm, D_ulm, DD_ulm, DD_llm, q_llm, so_llm
+  real(prec) :: frus2, minNotSwitchRouting, minNotSwitchRouting2
+  real(prec) :: dt_qtrib
+  real(prec) :: z_g, bo_g, traps_g, tw_g, twcc_g, so_g, mann_g, manncc_g
+  real(prec) :: dmyi, dmyj
+  real(prec) :: dtini_min
+  real(prec), dimension(:),       allocatable :: eei, ffi, exi, fxi, qcx, diffusivity2, celerity2
+  real(prec), dimension(:),       allocatable :: ini_y, ini_q
+  real(prec), dimension(:),       allocatable :: lowerLimitCount, higherLimitCount
+  real(prec), dimension(:),       allocatable :: elevTable, areaTable, skkkTable
+  real(prec), dimension(:),       allocatable :: pereTable, rediTable
+  real(prec), dimension(:),       allocatable :: convTable, topwTable
+  real(prec), dimension(:),       allocatable :: nwi1Table, dPdATable
+  real(prec), dimension(:),       allocatable :: ncompElevTable, ncompAreaTable
+  real(prec), dimension(:),       allocatable :: currentSquareDepth
+  real(prec), dimension(:),       allocatable :: tarr_qtrib, varr_qtrib
+  real(prec), dimension(:),       allocatable :: tarr_da, varr_da
+  real(prec), dimension(:),       allocatable :: area, depth, co, froud, courant
+  real(prec), dimension(:,:),     allocatable :: bo, dx
+  real(prec), dimension(:,:),     allocatable :: areap, qp, z, sk
+  real(prec), dimension(:,:),     allocatable :: celerity, diffusivity, qpx  
+  real(prec), dimension(:,:),     allocatable :: pere, oldQ, newQ, oldArea, newArea, oldY, newY  
+  real(prec), dimension(:,:),     allocatable :: volRemain  
+  real(prec), dimension(:,:),     allocatable :: lateralFlow
+  real(prec), dimension(:,:),     allocatable :: dimensionless_Cr, dimensionless_Fo, dimensionless_Fi
+  real(prec), dimension(:,:),     allocatable :: dimensionless_Di, dimensionless_Fc, dimensionless_D  
+  real(prec), dimension(:,:),     allocatable :: qtrib 
+  real(prec), dimension(:,:),     allocatable :: usgs_da
+  real(prec), dimension(:,:,:),   allocatable :: x_bathy, z_bathy, mann_bathy 
+  real(prec), dimension(:,:,:,:), allocatable :: xsec_tab
   
 contains
 
-  subroutine diffnw(timestep_ar_g, nts_ql_g, nts_ub_g, nts_db_g, ntss_ev_g, nts_qtrib_g, nts_da_g,      &
+  subroutine diffnw(timestep_ar_g, nts_ql_g, nts_ub_g, nts_db_g, nts_ev_g, nts_qtrib_g, nts_da_g,      &
                     mxncomp_g, nrch_g, z_ar_g, bo_ar_g, traps_ar_g, tw_ar_g, twcc_ar_g, mann_ar_g,      &
                     manncc_ar_g, so_ar_g, dx_ar_g,                                                      &
                     iniq, frnw_col, frnw_ar_g, qlat_g, ubcd_g, dbcd_g, qtrib_g,                         &
@@ -121,7 +121,7 @@ contains
     integer, intent(in) :: nts_ql_g
     integer, intent(in) :: nts_ub_g
     integer, intent(in) :: nts_db_g
-    integer, intent(in) :: ntss_ev_g
+    integer, intent(in) :: nts_ev_g
     integer, intent(in) :: nts_qtrib_g
     integer, intent(in) :: nts_da_g
     integer, intent(in) :: frnw_col
@@ -132,32 +132,32 @@ contains
     integer, dimension(nrch_g), intent(in) :: usgs_da_reach_g
     integer, dimension(nrch_g, frnw_col),  intent(in) :: frnw_ar_g
     integer, dimension(mxncomp_g, nrch_g), intent(in) :: size_bathy_g
-    double precision, dimension(paradim ), intent(in) :: para_ar_g
-    double precision, dimension(:)       , intent(in) :: timestep_ar_g(10)
-    double precision, dimension(nts_db_g), intent(in) :: dbcd_g    
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: z_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: bo_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: traps_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: tw_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: twcc_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: mann_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: manncc_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: dx_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: rdx_ar_g        
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: iniq
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: so_ar_g
-    double precision, dimension(mxncomp_g,   nrch_g),            intent(in) :: z_thalweg_g
-    double precision, dimension(nts_ub_g,    nrch_g),            intent(in) :: ubcd_g
-    double precision, dimension(nts_qtrib_g, nrch_g),            intent(in) :: qtrib_g 
-    double precision, dimension(nts_da_g,    nrch_g),            intent(in) :: usgs_da_g 
-    double precision, dimension(cwnrow_g, cwncol_g),             intent(in) :: crosswalk_g    
-    double precision, dimension(nts_ql_g,  mxncomp_g, nrch_g),   intent(in ) :: qlat_g 
-    double precision, dimension(mxnbathy_g, mxncomp_g, nrch_g),  intent(in ) :: x_bathy_g
-    double precision, dimension(mxnbathy_g, mxncomp_g, nrch_g),  intent(in ) :: z_bathy_g
-    double precision, dimension(mxnbathy_g, mxncomp_g, nrch_g),  intent(in ) :: mann_bathy_g
-    double precision, dimension(ntss_ev_g, mxncomp_g, nrch_g),   intent(out) :: q_ev_g
-    double precision, dimension(ntss_ev_g, mxncomp_g, nrch_g),   intent(out) :: elv_ev_g
-    double precision, dimension(ntss_ev_g, mxncomp_g, nrch_g),   intent(out) :: depth_ev_g
+    real(prec), dimension(paradim ), intent(in) :: para_ar_g
+    real(prec), dimension(:)       , intent(in) :: timestep_ar_g(10)
+    real(prec), dimension(nts_db_g), intent(in) :: dbcd_g    
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: z_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: bo_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: traps_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: tw_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: twcc_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: mann_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: manncc_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: dx_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: rdx_ar_g        
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: iniq
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: so_ar_g
+    real(prec), dimension(mxncomp_g,   nrch_g),            intent(in) :: z_thalweg_g
+    real(prec), dimension(nts_ub_g,    nrch_g),            intent(in) :: ubcd_g
+    real(prec), dimension(nts_qtrib_g, nrch_g),            intent(in) :: qtrib_g 
+    real(prec), dimension(nts_da_g,    nrch_g),            intent(in) :: usgs_da_g 
+    real(prec), dimension(cwnrow_g, cwncol_g),             intent(in) :: crosswalk_g    
+    real(prec), dimension(nts_ql_g,  mxncomp_g, nrch_g),   intent(in ) :: qlat_g 
+    real(prec), dimension(mxnbathy_g, mxncomp_g, nrch_g),  intent(in ) :: x_bathy_g
+    real(prec), dimension(mxnbathy_g, mxncomp_g, nrch_g),  intent(in ) :: z_bathy_g
+    real(prec), dimension(mxnbathy_g, mxncomp_g, nrch_g),  intent(in ) :: mann_bathy_g
+    real(prec), dimension(nts_ev_g, mxncomp_g, nrch_g),   intent(out) :: q_ev_g
+    real(prec), dimension(nts_ev_g, mxncomp_g, nrch_g),   intent(out) :: elv_ev_g
+    real(prec), dimension(nts_ev_g, mxncomp_g, nrch_g),   intent(out) :: depth_ev_g
 
   ! Local variables    
     integer :: ncomp
@@ -179,48 +179,49 @@ contains
     integer :: ri, rj, oi, oj
     integer :: nlnk, lnk
     integer :: nusrch
+    integer :: n_decimal_places 
     integer, dimension(:), allocatable   :: dmy_frj
     integer, dimension(:,:), allocatable :: flag_lfrac
-    double precision :: x
-    double precision :: saveInterval, width
-    !double precision :: maxCourant
-    double precision :: dtini_given, dtini_divisor
-    double precision :: timesDepth
-    double precision :: t
-    double precision :: tfin
-    double precision :: t0
-    double precision :: q_sk_multi
-    double precision :: maxCelDx
-    double precision :: slope
-    double precision :: y_norm
-    double precision :: temp
-    double precision :: dt_ql
-    double precision :: dt_ub
-    double precision :: dt_db
-    double precision :: dt_da
-    double precision :: wdepth
-    double precision :: q_usrch
-    double precision :: tf0
-    double precision :: convey
-    double precision :: equiv_one
-    double precision :: slopeQ, intcQ, slopeE, intcE, slopeD, intcD
-    double precision :: lfrac, dst_lnk, dst_top, dst_btm
-    double precision :: mindepth_nstab
-    double precision, dimension(:), allocatable :: tarr_ql
-    double precision, dimension(:), allocatable :: varr_ql
-    double precision, dimension(:), allocatable :: tarr_ub
-    double precision, dimension(:), allocatable :: varr_ub
-    double precision, dimension(:), allocatable :: tarr_db
-    double precision, dimension(:), allocatable :: varr_db
-    double precision, dimension(:), allocatable :: dbcd ! temporary
-    double precision, dimension(:,:), allocatable :: leftBank
-    double precision, dimension(:,:), allocatable :: rightBank
-    double precision, dimension(:,:), allocatable :: skLeft
-    double precision, dimension(:,:), allocatable :: skMain
-    double precision, dimension(:,:), allocatable :: skRight
-    double precision, dimension(:,:), allocatable :: used_lfrac    
-    double precision, dimension(:,:,:), allocatable :: temp_q_ev_g
-    double precision, dimension(:,:,:), allocatable :: temp_elv_ev_g    
+    real(prec) :: x
+    real(prec) :: saveInterval, width
+    !real(prec) :: maxCourant
+    real(prec) :: dtini_given, dtini_divisor
+    real(prec) :: timesDepth
+    real(prec) :: t
+    real(prec) :: tfin
+    real(prec) :: t0
+    real(prec) :: q_sk_multi
+    real(prec) :: maxCelDx
+    real(prec) :: slope
+    real(prec) :: y_norm
+    real(prec) :: temp
+    real(prec) :: dt_ql
+    real(prec) :: dt_ub
+    real(prec) :: dt_db
+    real(prec) :: dt_da
+    real(prec) :: wdepth
+    real(prec) :: q_usrch
+    real(prec) :: tf0
+    real(prec) :: convey
+    real(prec) :: equiv_one
+    real(prec) :: slopeQ, intcQ, slopeE, intcE, slopeD, intcD
+    real(prec) :: lfrac, dst_lnk, dst_top, dst_btm
+    real(prec) :: mindepth_nstab
+    real(prec), dimension(:), allocatable :: tarr_ql
+    real(prec), dimension(:), allocatable :: varr_ql
+    real(prec), dimension(:), allocatable :: tarr_ub
+    real(prec), dimension(:), allocatable :: varr_ub
+    real(prec), dimension(:), allocatable :: tarr_db
+    real(prec), dimension(:), allocatable :: varr_db
+    real(prec), dimension(:), allocatable :: dbcd ! temporary
+    real(prec), dimension(:,:), allocatable :: leftBank
+    real(prec), dimension(:,:), allocatable :: rightBank
+    real(prec), dimension(:,:), allocatable :: skLeft
+    real(prec), dimension(:,:), allocatable :: skMain
+    real(prec), dimension(:,:), allocatable :: skRight
+    real(prec), dimension(:,:), allocatable :: used_lfrac    
+    real(prec), dimension(:,:,:), allocatable :: temp_q_ev_g
+    real(prec), dimension(:,:,:), allocatable :: temp_elv_ev_g    
 
   !-----------------------------------------------------------------------------
   ! Time domain parameters
@@ -257,7 +258,7 @@ contains
     DD_llm      = para_ar_g(5)  ! lower limit of dimensionless diffusivity (default -15)
     DD_ulm      = para_ar_g(6)  ! upper limit of dimensionless diffusivity (default: -10.0)
     q_llm       = para_ar_g(8)  ! lower limit of discharge (default: 0.02831 cms)
-    so_llm      = para_ar_g(9)  ! lower limit of channel bed slope (default: 0.0001)
+    so_llm      = para_ar_g(9)  ! lower limit of channel bed slope (default: 0.00001)
     theta       = para_ar_g(10) ! weight for computing 2nd derivative: 
                                 ! 0: explicit, 1: implicit (default: 1.0)
     dsbc_option = para_ar_g(11) ! downstream water depth boundary condition option 1:given water depth data, 2:normal depth   
@@ -340,8 +341,7 @@ contains
     allocate(usgs_da_reach(nlinks))
     allocate(usgs_da(nts_da, nlinks))
     allocate(dbcd(nts_db_g))
-    allocate(temp_q_ev_g(ntss_ev_g, mxncomp_g, nrch_g), temp_elv_ev_g(ntss_ev_g, mxncomp_g, nrch_g)) 
-
+    allocate(temp_q_ev_g(nts_ev_g, mxncomp_g, nrch_g), temp_elv_ev_g(nts_ev_g, mxncomp_g, nrch_g)) 
     
   !--------------------------------------------------------------------------------------------
     frnw_g        = frnw_ar_g ! network mapping matrix
@@ -350,8 +350,7 @@ contains
     usgs_da       = usgs_da_g       ! contains usgs data at a related reach 
         
   !-----------------------------------------------------------------------------
-  ! variable initializations
-  
+  ! variable initializations  
     routingNotChanged   = 0
     applyNaturalSection = 1
     x                   = 0.0
@@ -359,7 +358,7 @@ contains
     newY                = -999
     t                   = t0*60.0     ! [min]
     q_sk_multi          = 1.0
-    oldQ                = iniq
+    oldQ                = iniq    
     newQ                = oldQ
     qp                  = oldQ
     dimensionless_Cr    = -999
@@ -374,10 +373,10 @@ contains
     depth_ev_g          = 0.0
     temp_q_ev_g         = 0.0
     temp_elv_ev_g       = 0.0    
+
   !-----------------------------------------------------------------------------
   ! Identify mainstem reaches and list their ids in an array
 
-    ! Create a dummy array containing mainstem reaches where diffusive wave is applied.
     nmstem_rch = 0
     do j = 1, nlinks
       !if (frnw_g(j,3) >= 1) then  ! mainstem reach identification
@@ -394,10 +393,10 @@ contains
       mstem_frj(jm) = dmy_frj(jm)
     end do
     deallocate(dmy_frj)
-
+    
   !-----------------------------------------------------------------------------
   ! create dx array from dx_ar_g and determine minimum dx.
-
+    
     dx    = 0.
     minDx = 1e10
 
@@ -528,9 +527,17 @@ contains
 
   !-----------------------------------------------------------------------------
   ! Initialize water surface elevation, channel area, and volume
+    do j = 1, nlinks 
+      ncomp = frnw_g(j, 1)   ! number of nodes in reach j  
+      do i=1, ncomp
+        oldQ(i,j) = max(oldQ(i,j), q_llm)
+        qp(i,j) = oldQ(i,j)
+      enddo
+    enddo
+
     do jm = nmstem_rch, 1, -1
       j     = mstem_frj(jm)  ! reach index
-      ncomp = frnw_g(j, 1)   ! number of nodes in reach j    
+      ncomp = frnw_g(j, 1)   ! number of nodes in reach j       
       if (frnw_g(j, 2) < 0) then 
       
         ! Initial depth at bottom node of tail water reach        
@@ -563,22 +570,22 @@ contains
       ! compute newY(i, j) for i=1, ncomp-1 with the given newY(ncomp, j)
       ! ** At initial time, oldY(i,j) values at i < ncomp, used in subroutine rtsafe, are not defined.
       ! ** So, let's assume the depth values are all nodes equal to depth at the bottom node.
-      wdepth = newY(ncomp, j) - z(ncomp, j)
+      oldY(ncomp, j) = newY(ncomp, j)
+      wdepth         = newY(ncomp, j) - z(ncomp, j)
       do i = 1, ncomp -1
         oldY(i,j) = wdepth + z(i, j)      
       end do
       
       call mesh_diffusive_backward(dtini_given, t0, t, tfin, saveInterval, j)
-
+      
       do i = 1,ncomp      
         ! copy computed initial depths to initial depth array for first timestep
         oldY(i, j) = newY(i, j)
         
         ! Check that node elevation is not lower than bottom node.
         ! If node elevation is lower than bottom node elevation, correct.
-        if (oldY(i, j) .lt. oldY(ncomp, nlinks)) oldY(i, j) = oldY(ncomp, nlinks)
-      end do
-      
+        !if (oldY(i, j) .lt. oldY(ncomp, nlinks)) oldY(i, j) = oldY(ncomp, nlinks)
+      end do      
     end do
 
   !-----------------------------------------------------------------------------
@@ -621,14 +628,12 @@ contains
     frus2                   = 9999.
     notSwitchRouting        = 0
     minNotSwitchRouting     = 10000
-!    minNotSwitchRouting2    = 000
     timestep                = 0
     ts_ev                   = 1
     t                       = t0 * 60.0
 
   !-----------------------------------------------------------------------------
   ! Ordered network routing computations
-
     do while ( t < tfin * 60.)
       timestep = timestep + 1 ! advance timestep
       !+-------------------------------------------------------------------------
@@ -639,12 +644,12 @@ contains
       do jm = 1, nmstem_rch   ! loop over mainstem reaches [upstream-to-downstream]
         j     = mstem_frj(jm) ! reach index
         ncomp = frnw_g(j,1)   ! number of nodes in reach j
-
+        
         ! Calculate the duration of this timestep (dtini)
         ! Timestep duration is selected to maintain numerical stability
         if (j == mstem_frj(1)) then 
           call calculateDT(t0, t, saveInterval, cfl, tfin, maxCelDx, dtini_given)
-        end if                                        
+        end if        
 
         ! estimate lateral flow at current time t
         do i = 1, ncomp - 1
@@ -674,14 +679,15 @@ contains
               do n = 1, nts_qtrib_g
                 varr_qtrib(n) = qtrib_g(n, usrchj)
               end do
-              tf0 = t +  dtini / 60.
+              tf0 = t !+  dtini / 60
               q_usrch = intp_y(nts_qtrib_g, tarr_qtrib, varr_qtrib, tf0)
             end if
+
             ! add upstream flows to reach head
             newQ(1,j)= newQ(1,j) + q_usrch           
           end do        
         else
-
+        
           ! no stream reaches at the upstream of the reach (frnw_g(j,3)==0) such as a headwater reach among tributaries
           newQ(1,j)= 0.0          
         end if
@@ -772,7 +778,7 @@ contains
         !end if
       end do
 
-      ! Advance model time
+      ! Advance model time [minute]
       t = t + dtini/60.
       
       ! Calculate dimensionless numbers for each reach
@@ -782,13 +788,13 @@ contains
       !end do
 
       ! diffusive wave simulation time print
-      if (mod(t,30.)==0.) then
+      if (mod(t,5.)==0.) then
         print*, "diffusive simulation time in minute=", t
       endif
 
       ! write results to output arrays
       if ( (mod((t - t0 * 60.) * 60., saveInterval) <= TOLERANCE) .or. (t == tfin * 60.)) then
-        do jm = 1, nmstem_rch
+         do jm = 1, nmstem_rch
           j     = mstem_frj(jm)
           ncomp = frnw_g(j, 1)
           do i = 1, ncomp
@@ -796,7 +802,7 @@ contains
             elv_ev_g(ts_ev + 1, i, j)   = newY(i, j)
             depth_ev_g(ts_ev + 1, i, j) = elv_ev_g(ts_ev + 1, i, j) - z(i, j)
           end do
-              
+          
           !* water elevation for tributaries flowing into the mainstem in the middle or at the upper end
           do k = 1, frnw_g(j, 3)
             usrchj = frnw_g(j, 3 + k)
@@ -848,7 +854,8 @@ contains
     
     !---------------------------------------------------------------------------
     ! map routing result from refactored hydrofabric to unrefactored hydrofabric
-    if (cwnrow_g > 0) then    
+    if (1==2) then
+      if (cwnrow_g > 0) then    
         allocate(used_lfrac(mxncomp, nlinks))
         allocate(flag_lfrac(mxncomp, nlinks))   
         equiv_one = 0.99    
@@ -858,7 +865,7 @@ contains
         q_ev_g = 0.0
         elv_ev_g = 0.0
 
-        do ts=1, ntss_ev_g
+        do ts=1, nts_ev_g
           used_lfrac = 0.0
           flag_lfrac = 0
           do cwrow = 1, cwnrow_g
@@ -914,11 +921,12 @@ contains
                  flag_lfrac(oi, oj)     = 0
               endif
             end do
-           end do
           end do
-          deallocate(used_lfrac)
-          deallocate(flag_lfrac)   
-        endif    
+        end do
+        deallocate(used_lfrac)
+        deallocate(flag_lfrac)   
+      endif
+    endif    
    
     deallocate(frnw_g)
     deallocate(area, bo, pere, areap, qp, z,  depth, sk, co, dx) 
@@ -961,13 +969,13 @@ contains
   !-----------------------------------------------------------------------------
 
   ! Subroutine arguments
-    double precision, intent(in) :: initialTime       ! [sec]
-    double precision, intent(in) :: time              ! [hrs]
-    double precision, intent(in) :: saveInterval      ! [sec]
-    double precision, intent(in) :: tfin              ! [hrs]
-    double precision, intent(in) :: given_dt          ! [sec]
-    double precision, intent(in) :: maxAllowCourantNo ! = cfl
-    double precision, intent(in) :: max_C_dx          ! = maxCelDx
+    real(prec), intent(in) :: initialTime       ! [sec]
+    real(prec), intent(in) :: time              ! [hrs]
+    real(prec), intent(in) :: saveInterval      ! [sec]
+    real(prec), intent(in) :: tfin              ! [hrs]
+    real(prec), intent(in) :: given_dt          ! [sec]
+    real(prec), intent(in) :: maxAllowCourantNo ! = cfl
+    real(prec), intent(in) :: max_C_dx          ! = maxCelDx
       
   ! Local variables
     integer :: a
@@ -1015,29 +1023,29 @@ contains
   ! Local variables
     integer :: i
     integer :: ncomp
-    double precision :: wl_us
-    double precision :: depth_us
-    double precision :: q_us
-    double precision :: v_us
-    double precision :: pere_us
-    double precision :: r_us
-    double precision :: sk_us
-    double precision :: ch_us
-    double precision :: wl_ds
-    double precision :: depth_ds
-    double precision :: q_ds
-    double precision :: v_ds
-    double precision :: pere_ds
-    double precision :: r_ds
-    double precision :: sk_ds
-    double precision :: ch_ds
-    double precision :: ch_star_avg
-    double precision :: channel_length
-    double precision :: avg_celerity
-    double precision :: avg_velocity
-    double precision :: avg_depth
-    double precision :: maxValue
-    double precision :: dimlessWaveLength
+    real(prec) :: wl_us
+    real(prec) :: depth_us
+    real(prec) :: q_us
+    real(prec) :: v_us
+    real(prec) :: pere_us
+    real(prec) :: r_us
+    real(prec) :: sk_us
+    real(prec) :: ch_us
+    real(prec) :: wl_ds
+    real(prec) :: depth_ds
+    real(prec) :: q_ds
+    real(prec) :: v_ds
+    real(prec) :: pere_ds
+    real(prec) :: r_ds
+    real(prec) :: sk_ds
+    real(prec) :: ch_ds
+    real(prec) :: ch_star_avg
+    real(prec) :: channel_length
+    real(prec) :: avg_celerity
+    real(prec) :: avg_velocity
+    real(prec) :: avg_depth
+    real(prec) :: maxValue
+    real(prec) :: dimlessWaveLength
       
   !-----------------------------------------------------------------------------  
     maxValue          = 1e7
@@ -1125,27 +1133,27 @@ contains
 
     ! Subroutine Arguments
       integer, intent(in) :: j
-      double precision, intent(in) :: dtini_given
-      double precision, intent(in) :: t0
-      double precision, intent(in) :: t
-      double precision, intent(in) :: tfin
-      double precision, intent(in) :: saveInterval
+      real(prec), intent(in) :: dtini_given
+      real(prec), intent(in) :: t0
+      real(prec), intent(in) :: t
+      real(prec), intent(in) :: tfin
+      real(prec), intent(in) :: saveInterval
     
     ! Local variables
       integer :: ncomp
       integer :: i, irow, flag_da, n
-      double precision :: a1, a2, a3, a4
-      double precision :: b1, b2, b3, b4
-      double precision :: dd1, dd2, dd3, dd4
-      double precision :: h1, h2, h3, h4
-      double precision :: allqlat
-      double precision :: qy, qxy, qxxy, qxxxy
-      double precision :: ppi, qqi, rri, ssi, sxi
-      double precision :: cour, cour2
-      double precision :: alpha
-      double precision :: currentQ
-      double precision :: eei_ghost, ffi_ghost, exi_ghost
-      double precision :: fxi_ghost, qp_ghost, qpx_ghost
+      real(prec) :: a1, a2, a3, a4
+      real(prec) :: b1, b2, b3, b4
+      real(prec) :: dd1, dd2, dd3, dd4
+      real(prec) :: h1, h2, h3, h4
+      real(prec) :: allqlat
+      real(prec) :: qy, qxy, qxxy, qxxxy
+      real(prec) :: ppi, qqi, rri, ssi, sxi
+      real(prec) :: cour, cour2
+      real(prec) :: alpha
+      real(prec) :: currentQ
+      real(prec) :: eei_ghost, ffi_ghost, exi_ghost
+      real(prec) :: fxi_ghost, qp_ghost, qpx_ghost
     !-----------------------------------------------------------------------------
     !* change 20210228: All qlat to a river reach is applied to the u/s boundary
     !* Note: lateralFlow(1,j) is already added to the boundary
@@ -1224,7 +1232,7 @@ contains
         ffi(i) = ( ssi - ppi * ffi(i-1) ) / ( ppi * eei(i-1) + qqi )
         exi(i) = -1.0 * rri / ( ppi * exi(i-1) + qqi )
         fxi(i) = ( sxi - ppi * fxi(i-1) ) / ( ppi * exi(i-1) + qqi )
-        
+
       end do
       
       ! Ghost point calculation
@@ -1310,14 +1318,14 @@ contains
       do i = ncomp-1, 1, -1
         qp(i, j)  = eei(i) * qp(i+1, j) + ffi(i)
         qpx(i, j) = exi(i) * qpx(i+1, j) + fxi(i)
-     end do
+      end do
 
       ! when a reach hasn't been applied to DA 
      ! if ((usgs_da_reach(j) == 0).or.(flag_da == 0)) then
        qp(1, j) = newQ(1, j)
        qp(1, j) = qp(1, j) + allqlat
      ! endif
-    
+  
       do i = 1, ncomp
         if (abs(qp(i, j)) < q_llm) then
           qp(i, j) = q_llm    
@@ -1328,6 +1336,7 @@ contains
       do i = 1, ncomp
         newQ(i, j) = qp(i, j)
       end do
+
     ! ============== DEBUG to find unstable flow calcls =================
     !        do i= ncomp, 1, -1
     !            if (abs(qp(i,j)) .gt. 2E4) then
@@ -1354,7 +1363,7 @@ contains
       
   end subroutine mesh_diffusive_forward
   
-  subroutine mesh_diffusive_backward(dtini_given, t0, t, tfin, saveInterval, j) ! leftBank, rightBank)
+  subroutine mesh_diffusive_backward(dtini_given, t0, t, tfin, saveInterval, j) ! leftBank, rightBank
 
     IMPLICIT NONE
 
@@ -1375,23 +1384,23 @@ contains
 
   ! Subroutine arguments
     integer, intent(in) :: j
-    double precision, intent(in) :: dtini_given
-    double precision, intent(in) :: t0
-    double precision, intent(in) :: t
-    double precision, intent(in) :: tfin
-    double precision, intent(in) :: saveInterval
+    real(prec), intent(in) :: dtini_given
+    real(prec), intent(in) :: t0
+    real(prec), intent(in) :: t
+    real(prec), intent(in) :: tfin
+    real(prec), intent(in) :: saveInterval
       
   ! Subroutine variables
     integer :: depthCalOk(mxncomp)
     integer :: i, ncomp  
     integer :: jj
-    double precision :: xt
-    double precision :: q_sk_multi, sfi
-    double precision :: vel, currentQ
-    double precision :: S_ncomp                             
-    double precision :: tempDepthi_1
-    double precision :: Q_cur, Q_ds, z_cur, z_ds, y_cur, y_ds
-    double precision :: C_ulm
+    real(prec) :: xt
+    real(prec) :: q_sk_multi, sfi
+    real(prec) :: vel, currentQ
+    real(prec) :: S_ncomp                             
+    real(prec) :: tempDepthi_1
+    real(prec) :: Q_cur, Q_ds, z_cur, z_ds, y_cur, y_ds
+    real(prec) :: C_ulm
 
   !-----------------------------------------------------------------------------
     ncomp = frnw_g(j, 1)
@@ -1547,9 +1556,10 @@ contains
     diffusivity(1:ncomp, j) = sum(diffusivity2(1:ncomp)) / ncomp
     
     do i = 1, ncomp
-      if (diffusivity(i, j) > D_ulm) diffusivity(i, j) = D_ulm !!! Test
-      if (diffusivity(i, j) < D_llm) diffusivity(i, j) = D_llm !!! Test
+      if (diffusivity(i, j) > D_ulm) diffusivity(i, j) = D_ulm 
+      if (diffusivity(i, j) < D_llm) diffusivity(i, j) = D_llm 
     end do
+
   end subroutine mesh_diffusive_backward
 
   function rtsafe(i, j, Q_cur, Q_ds, z_cur, z_ds, y_ds)
@@ -1572,16 +1582,16 @@ contains
 
     ! Subroutine arguments
     integer,          intent(in) :: i, j
-    double precision, intent(in) :: Q_cur, Q_ds, z_cur, z_ds, y_ds
+    real(prec), intent(in) :: Q_cur, Q_ds, z_cur, z_ds, y_ds
   
     ! Subroutine local variable
     integer,          parameter :: maxit = 40
-    double precision, parameter :: xacc = 1e-4
+    real(prec), parameter :: xacc = 1e-4
     integer                     :: iter
     integer                     :: xcolID, ycolID
-    double precision            :: x1, x2, df, dxx, dxold, f, fh, fl, temp, xh, xl
-    double precision            :: y_norm, y_ulm_multi, y_llm_multi, elv_norm, y_old
-    double precision            :: rtsafe    
+    real(prec)            :: x1, x2, df, dxx, dxold, f, fh, fl, temp, xh, xl
+    real(prec)            :: y_norm, y_ulm_multi, y_llm_multi, elv_norm, y_old
+    real(prec)            :: rtsafe    
     
     y_ulm_multi = 2.0
     y_llm_multi = 0.1
@@ -1675,13 +1685,13 @@ contains
 
     ! subroutine arguments
     integer,          intent(in)  :: i, j
-    double precision, intent(in)  :: Q_cur, Q_ds, z_cur, z_ds, y_cur, y_ds
-    double precision, intent(out) :: f, df
+    real(prec), intent(in)  :: Q_cur, Q_ds, z_cur, z_ds, y_cur, y_ds
+    real(prec), intent(out) :: f, df
     
     ! subroutine local variables
     integer          :: xcolID, ycolID
-    double precision :: elv_cur, elv_ds, conv_cur, conv_ds, sf_cur, sf_ds, slope
-    double precision :: dKdA_cur, topw_cur
+    real(prec) :: elv_cur, elv_ds, conv_cur, conv_ds, sf_cur, sf_ds, slope
+    real(prec) :: dKdA_cur, topw_cur
 
     xcolID  = 1
     ! f(y_cur): function of y at the current node
@@ -1710,7 +1720,7 @@ contains
 
   end subroutine funcd_diffdepth
 
-  double precision function intp_xsec_tab(i, j, nrow, xcolID, ycolID, x)
+  real(prec) function intp_xsec_tab(i, j, nrow, xcolID, ycolID, x)
     
     implicit none
     
@@ -1724,12 +1734,12 @@ contains
 
     ! subroutine arguments
     integer         , intent(in) :: i, j, nrow, xcolID, ycolID
-    double precision, intent(in) :: x
+    real(prec), intent(in) :: x
     
     ! subroutine local variables
     integer                           :: irow
-    double precision                  :: x1, y1, x2, y2, y
-    double precision, dimension(nrow) :: xarr, yarr
+    real(prec)                  :: x1, y1, x2, y2, y
+    real(prec), dimension(nrow) :: xarr, yarr
 
     xarr = xsec_tab(xcolID, 1:nrow, i, j)
     yarr = xsec_tab(ycolID, 1:nrow, i, j)
@@ -1770,24 +1780,24 @@ contains
     
     ! subroutine arguments
     integer,          intent(in) :: idx_node, idx_reach 
-    double precision, intent(in) :: timesDepth
+    real(prec), intent(in) :: timesDepth
     
     ! subroutine local variables
     integer          :: i_area, i_find, num
     integer          :: i1, i2
     integer          :: ic, iel, ii, ii2, iv, iel_start, iel_incr_start, iel_decr_start, ndmy
-    double precision :: el_min, el_max, el_range, el_incr, el_now, x1, y1, x2, y2, x_start, x_end
-    double precision :: f2m, cal_area, cal_peri, cal_topW
-    double precision :: mN_start, mN_end, cal_equiv_mann
-    double precision :: pos_slope, incr_rate, max_value  
+    real(prec) :: el_min, el_max, el_range, el_incr, el_now, x1, y1, x2, y2, x_start, x_end
+    real(prec) :: f2m, cal_area, cal_peri, cal_topW
+    real(prec) :: mN_start, mN_end, cal_equiv_mann
+    real(prec) :: pos_slope, incr_rate, max_value  
     integer,          dimension(:), allocatable :: i_start, i_end
-    double precision, dimension(:), allocatable :: x_bathy_leftzero
-    double precision, dimension(:), allocatable :: xcs, ycs, manncs
-    double precision, dimension(:), allocatable :: el1, a1, peri1, redi1, equiv_mann
-    double precision, dimension(:), allocatable :: redi1All
-    double precision, dimension(:), allocatable :: conv1, tpW1
-    double precision, dimension(:), allocatable :: newdKdA
-    double precision, dimension(:), allocatable :: compoundSKK, elev, dmyarr
+    real(prec), dimension(:), allocatable :: x_bathy_leftzero
+    real(prec), dimension(:), allocatable :: xcs, ycs, manncs
+    real(prec), dimension(:), allocatable :: el1, a1, peri1, redi1, equiv_mann
+    real(prec), dimension(:), allocatable :: redi1All
+    real(prec), dimension(:), allocatable :: conv1, tpW1
+    real(prec), dimension(:), allocatable :: newdKdA
+    real(prec), dimension(:), allocatable :: compoundSKK, elev, dmyarr
 
     allocate(el1(nel), a1(nel), peri1(nel), redi1(nel), redi1All(nel))
     allocate(equiv_mann(nel), conv1(nel), tpW1(nel))
@@ -2038,7 +2048,7 @@ contains
     deallocate(x_bathy_leftzero)
 
     contains
-      double precision function cal_dist_x_mann(x1, y1, x2, y2, mN)
+      real(prec) function cal_dist_x_mann(x1, y1, x2, y2, mN)
                 
         implicit none
         
@@ -2048,16 +2058,16 @@ contains
         !-----------------------------------------------------                
         
         ! function arguments
-        double precision, intent(in) :: x1, y1, x2, y2, mN
+        real(prec), intent(in) :: x1, y1, x2, y2, mN
         ! function local variable
-        double precision :: dist
+        real(prec) :: dist
 
         dist = sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + 1.e-32)
         cal_dist_x_mann = dist * mN**1.50
 
       end function cal_dist_x_mann
 
-      double precision function cal_peri_x_mann(xx, yy, mN, n, i1, i2)
+      real(prec) function cal_peri_x_mann(xx, yy, mN, n, i1, i2)
         
         implicit none
 
@@ -2068,10 +2078,10 @@ contains
         
         ! function arguments
         integer,          intent(in) :: n, i1, i2
-        double precision, intent(in) :: xx(n), yy(n), mN(n)
+        real(prec), intent(in) :: xx(n), yy(n), mN(n)
         ! function local variables
         integer          :: i
-        double precision :: x1, x2, y1, y2, mN1, pxmN
+        real(prec) :: x1, x2, y1, y2, mN1, pxmN
 
         pxmN = 0.0
 
@@ -2106,30 +2116,30 @@ contains
 
     ! subroutine arguments
     integer,                                        intent(in) :: k, num_reach, lmxncomp, lnlinks
-    double precision,                               intent(in) :: rmanning_main,lftBnkMann,rgtBnkMann
-    double precision,                               intent(in) :: leftBnkX_given,rghtBnkX_given, timesDepth
-    double precision, dimension(lmxncomp, lnlinks), intent(in) :: z_ar_g, bo_ar_g, traps_ar_g, tw_ar_g, twcc_ar_g
+    real(prec),                               intent(in) :: rmanning_main,lftBnkMann,rgtBnkMann
+    real(prec),                               intent(in) :: leftBnkX_given,rghtBnkX_given, timesDepth
+    real(prec), dimension(lmxncomp, lnlinks), intent(in) :: z_ar_g, bo_ar_g, traps_ar_g, tw_ar_g, twcc_ar_g
     
     ! subroutine local variables
     integer          :: i_area, i_find, i, j, jj, num  
     integer          :: i1, i2
     integer          :: mainChanStrt, mainChanEnd, kkk, startFound, endFound 
-    double precision :: el_min, el_max, el_range, el_incr, el_now
-    double precision :: x1, y1, x2, y2, x_start, x_end
-    double precision :: waterElev, leftBnkX,rghtBnkX
-    double precision :: f2m, cal_area, cal_peri, cal_topW,  diffAreaCenter
-    double precision :: compoundMann, el_min_1
-    double precision :: leftBnkY, rghtBnkY,rmanning
-    double precision :: hbf
+    real(prec) :: el_min, el_max, el_range, el_incr, el_now
+    real(prec) :: x1, y1, x2, y2, x_start, x_end
+    real(prec) :: waterElev, leftBnkX,rghtBnkX
+    real(prec) :: f2m, cal_area, cal_peri, cal_topW,  diffAreaCenter
+    real(prec) :: compoundMann, el_min_1
+    real(prec) :: leftBnkY, rghtBnkY,rmanning
+    real(prec) :: hbf
     integer, dimension(:),            allocatable :: i_start, i_end, totalNodes  
-    double precision, dimension(:),   allocatable :: xcs, ycs
-    double precision, dimension(:,:), allocatable :: el1, a1, peri1, redi1
-    double precision, dimension(:),   allocatable :: redi1All
-    double precision, dimension(:,:), allocatable :: conv1, tpW1, diffArea, newI1, diffPere
-    double precision, dimension(:),   allocatable :: newdPdA, diffAreaAll, diffPereAll, newdKdA       
-    double precision, dimension(:),   allocatable :: compoundSKK, elev
-    double precision, dimension(:,:), allocatable :: allXcs, allYcs
-
+    real(prec), dimension(:),   allocatable :: xcs, ycs
+    real(prec), dimension(:,:), allocatable :: el1, a1, peri1, redi1
+    real(prec), dimension(:),   allocatable :: redi1All
+    real(prec), dimension(:,:), allocatable :: conv1, tpW1, diffArea, newI1, diffPere
+    real(prec), dimension(:),   allocatable :: newdPdA, diffAreaAll, diffPereAll, newdKdA       
+    real(prec), dimension(:),   allocatable :: compoundSKK, elev
+    real(prec), dimension(:,:), allocatable :: allXcs, allYcs
+    
     allocate(el1(nel,3), a1(nel,3), peri1(nel,3), redi1(nel,3), redi1All(nel))
     allocate(conv1(nel,3), tpW1(nel,3), diffArea(nel,3), newI1(nel,3), diffPere(nel,3))
     allocate(newdPdA(nel), diffAreaAll(nel), diffPereAll(nel), newdKdA(nel))       ! change Nazmul 20210601
@@ -2428,7 +2438,7 @@ contains
       xsec_tab(9, j, k, num_reach) = newdKdA(j)
       xsec_tab(11,j, k, num_reach) = compoundSKK(j)
     end do
-        
+
     z(k, num_reach) = el_min
 
     deallocate(el1, a1, peri1, redi1, redi1All)
@@ -2442,7 +2452,7 @@ contains
 
   end subroutine readXsection
 
-  double precision function cal_tri_area(el, x0, x1, y1)
+  real(prec) function cal_tri_area(el, x0, x1, y1)
       
       implicit none
       
@@ -2452,13 +2462,13 @@ contains
       !----------------------------------------
       
       ! function arguments
-      doubleprecision, intent(in) :: el, x0, x1, y1
+      real(prec), intent(in) :: el, x0, x1, y1
 
       cal_tri_area = abs(0.5 * (x1 - x0) * (el - y1))
     
     end function cal_tri_area
 
-    double precision function cal_trap_area(el, x1, y1, x2, y2)
+    real(prec) function cal_trap_area(el, x1, y1, x2, y2)
       
       implicit none
 
@@ -2467,13 +2477,13 @@ contains
       !   calculate area of trapezoid
       !----------------------------------------
                 
-      doubleprecision, intent(in) :: el, x1, y1, x2, y2
+      real(prec), intent(in) :: el, x1, y1, x2, y2
 
       cal_trap_area = abs(0.5 * (x2 - x1) * (el - y1 + el - y2))
 
     end function cal_trap_area
 
-    double precision function cal_multi_area(el, xx, yy, n, i1, i2)
+    real(prec) function cal_multi_area(el, xx, yy, n, i1, i2)
     
       implicit none
 
@@ -2484,11 +2494,11 @@ contains
       
       ! function arguments
       integer,          intent(in) :: n, i1, i2
-      double precision, intent(in) :: el
-      double precision, intent(in) :: xx(n), yy(n)
+      real(prec), intent(in) :: el
+      real(prec), intent(in) :: xx(n), yy(n)
       ! function local variables
       integer          :: i
-      double precision :: area, x1, x2, y1, y2
+      real(prec) :: area, x1, x2, y1, y2
 
       area = 0.0
 
@@ -2504,7 +2514,7 @@ contains
     
     endfunction cal_multi_area
 
-    double precision function cal_dist(x1, y1, x2, y2)
+    real(prec) function cal_dist(x1, y1, x2, y2)
       
       implicit none
 
@@ -2514,13 +2524,13 @@ contains
       !------------------------------------------  
       
       ! function arguments
-      doubleprecision, intent(in) :: x1, y1, x2, y2
+      real(prec), intent(in) :: x1, y1, x2, y2
 
       cal_dist = sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + 1.e-32)
     
     end function cal_dist
 
-    double precision function cal_perimeter(xx,yy,n,i1,i2)
+    real(prec) function cal_perimeter(xx,yy,n,i1,i2)
       
       implicit none
         
@@ -2531,10 +2541,10 @@ contains
       
       ! function arguments
       integer,          intent(in) :: n, i1, i2
-      double precision, intent(in) :: xx(n), yy(n)
+      real(prec), intent(in) :: xx(n), yy(n)
       ! function local variables
       integer          :: i
-      double precision :: p, x1, x2, y1, y2
+      real(prec) :: p, x1, x2, y1, y2
 
       p = 0.
       
@@ -2559,8 +2569,8 @@ contains
       !---------------------------------------------------------------------------         
       ! subroutine arguments
       integer,          intent(in)  :: kk
-      double precision, intent(in)  :: xrt, x(kk), y(kk)
-      double precision, intent(out) :: yt
+      real(prec), intent(in)  :: xrt, x(kk), y(kk)
+      real(prec), intent(out) :: yt
       ! subroutine local variables
       integer :: k
 
@@ -2609,11 +2619,11 @@ contains
 
       ! subroutine arguments
       integer,          intent(in)  :: i, j
-      double precision, intent(in)  :: q_sk_multi, So, dsc
-      double precision, intent(out) :: y_norm, y_crit, area_n, area_c
+      real(prec), intent(in)  :: q_sk_multi, So, dsc
+      real(prec), intent(out) :: y_norm, y_crit, area_n, area_c
       
       ! subroutine local variables 
-      double precision :: area_0, width_0, errorY
+      real(prec) :: area_0, width_0, errorY
 
       elevTable = xsec_tab(1, :, i, j)
       areaTable = xsec_tab(2, :, i, j)
@@ -2647,7 +2657,7 @@ contains
       end if
     end subroutine normal_crit_y
 
-    double precision function LInterpol(x1, y1, x2, y2, x)
+    real(prec) function LInterpol(x1, y1, x2, y2, x)
       
       implicit none
       
@@ -2657,7 +2667,7 @@ contains
       !-------------------------------------------------------------------------------------          
       
       ! function arguments
-      double precision, intent(in) :: x1, y1, x2, y2, x
+      real(prec), intent(in) :: x1, y1, x2, y2, x
       
       if (abs(x2-x1).lt.0.0001) then
        ! to prevent absurdly small value in the denominator
@@ -2668,7 +2678,7 @@ contains
       
     end function LInterpol
 
-    double precision function intp_y(nrow, xarr, yarr, x)
+    real(prec) function intp_y(nrow, xarr, yarr, x)
       
       implicit none
       !-------------------------------------------------------------------------------------
@@ -2678,11 +2688,11 @@ contains
 
       ! function arguments
       integer,                           intent(in) :: nrow
-      double precision,                  intent(in) :: x      
-      double precision, dimension(nrow), intent(in) :: xarr, yarr
+      real(prec),                  intent(in) :: x      
+      real(prec), dimension(nrow), intent(in) :: xarr, yarr
       ! function local variables
       integer          :: irow
-      double precision :: x1, y1, x2, y2, y
+      real(prec) :: x1, y1, x2, y2, y
 
       irow = locate(xarr, x)
       
@@ -2718,8 +2728,8 @@ contains
       !------------------------------------------------------------------------------------
       
       ! function arguments
-      double precision,               intent(in) :: x      
-      double precision, dimension(:), intent(in) :: xx
+      real(prec),               intent(in) :: x      
+      real(prec), dimension(:), intent(in) :: xx
 
       ! function local variables
       integer :: n, jl, jm, ju

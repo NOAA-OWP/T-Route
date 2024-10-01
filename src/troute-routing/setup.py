@@ -112,6 +112,16 @@ diffusive = Extension(
     libraries=[],
 )
 
+hybrid_routing_reach = Extension(
+    "troute.routing.fast_reach.hybrid_routing_reach",
+    sources=["troute/routing/fast_reach/hybrid_routing_reach.{}".format(ext)],
+    include_dirs=_include_paths,
+    libraries=[],
+    library_dirs=[],
+    extra_objects=[],
+    extra_compile_args=["-O2", "-g"],
+)
+
 chxsec_lookuptable = Extension(
     "troute.routing.fast_reach.chxsec_lookuptable",
     sources=["troute/routing/fast_reach/chxsec_lookuptable.{}".format(ext)],
@@ -124,8 +134,20 @@ chxsec_lookuptable = Extension(
     libraries=[],
 )
 
+diffusive_lightweight = Extension(
+    "troute.routing.fast_reach.diffusive_lightweight",
+    sources=["troute/routing/fast_reach/diffusive_lightweight.{}".format(ext)],
+    extra_objects=[
+        "troute/routing/fast_reach/diffusive_lightweight.o",
+        "troute/routing/fast_reach/pydiffusive_lightweight.o",
+    ],
+    include_dirs=[np.get_include()],
+    extra_compile_args=["-O2", "-g"],
+    libraries=[],
+)
+
 package_data = {"troute.fast_reach": ["reach.pxd", "fortran_wrappers.pxd", "utils.pxd"]}
-ext_modules = [reach, mc_reach, diffusive, simple_da, chxsec_lookuptable]
+ext_modules = [reach, mc_reach, diffusive, simple_da, hybrid_routing_reach, chxsec_lookuptable, diffusive_lightweight]
 
 if USE_CYTHON:
     from Cython.Build import cythonize

@@ -8,30 +8,30 @@ from .fortran_wrappers cimport c_chxsec_lookuptable_calc
 cdef void chxsec_lookuptable(
                             int mxncomp_g,
                             int nrch_g,
-                            double[::1,:] z_ar_g,
-                            double[::1,:] bo_ar_g,
-                            double[::1,:] traps_ar_g,
-                            double[::1,:] tw_ar_g,
-                            double[::1,:] twcc_ar_g,
-                            double[::1,:] mann_ar_g,
-                            double[::1,:] manncc_ar_g,
-                            double[::1,:] dx_ar_g,
-                            double so_lowerlimit_g,
+                            float[::1,:] z_ar_g,
+                            float[::1,:] bo_ar_g,
+                            float[::1,:] traps_ar_g,
+                            float[::1,:] tw_ar_g,
+                            float[::1,:] twcc_ar_g,
+                            float[::1,:] mann_ar_g,
+                            float[::1,:] manncc_ar_g,
+                            float[::1,:] dx_ar_g,
+                            float so_lowerlimit_g,
                             int frnw_col,
                             int[::1,:] frnw_g,
                             int mxnbathy_g,
-                            double[::1,:,:] x_bathy_g,
-                            double[::1,:,:] z_bathy_g,
-                            double[::1,:,:] mann_bathy_g,
+                            float[::1,:,:] x_bathy_g,
+                            float[::1,:,:] z_bathy_g,
+                            float[::1,:,:] mann_bathy_g,
                             int[::1,:] size_bathy_g, 
                             int nrow_chxsec_lookuptable,
-                            double[:,:,:,:] out_chxsec_lookuptable,
-                            double[:,:] out_z_adj,
+                            float[:,:,:,:] out_chxsec_lookuptable,
+                            float[:,:] out_z_adj,
 ):
 
     cdef:
-        double[::1,:,:,:] xsec_tab = np.empty([11, nrow_chxsec_lookuptable, mxncomp_g, nrch_g], dtype = np.double, order = 'F')
-        double[::1,:]     z_adj    = np.empty([mxncomp_g, nrch_g], dtype = np.double, order = 'F')
+        float[::1,:,:,:] xsec_tab = np.empty([11, nrow_chxsec_lookuptable, mxncomp_g, nrch_g], dtype = np.float32, order = 'F')
+        float[::1,:]     z_adj    = np.empty([mxncomp_g, nrch_g], dtype = np.float32, order = 'F')
     
     c_chxsec_lookuptable_calc(
                             &mxncomp_g,
@@ -69,25 +69,25 @@ cpdef object compute_chxsec_lookuptable(
     cdef:
         int mxncomp_g = diff_inputs["mxncomp_g"]
         int nrch_g = diff_inputs["nrch_g"]
-        double[::1,:] z_ar_g = np.asfortranarray(diff_inputs["z_ar_g"])
-        double[::1,:] bo_ar_g = np.asfortranarray(diff_inputs["bo_ar_g"])
-        double[::1,:] traps_ar_g = np.asfortranarray(diff_inputs["traps_ar_g"])
-        double[::1,:] tw_ar_g = np.asfortranarray(diff_inputs["tw_ar_g"])
-        double[::1,:] twcc_ar_g = np.asfortranarray(diff_inputs["twcc_ar_g"])
-        double[::1,:] mann_ar_g = np.asfortranarray(diff_inputs["mann_ar_g"])
-        double[::1,:] manncc_ar_g = np.asfortranarray(diff_inputs["manncc_ar_g"])
-        double[::1,:] dx_ar_g = np.asfortranarray(diff_inputs["dx_ar_g"])
-        double so_lowerlimit_g =  diff_inputs['para_ar_g'][8]  
+        float[::1,:] z_ar_g = np.asfortranarray(diff_inputs["z_ar_g"].astype(np.float32))
+        float[::1,:] bo_ar_g = np.asfortranarray(diff_inputs["bo_ar_g"].astype(np.float32))
+        float[::1,:] traps_ar_g = np.asfortranarray(diff_inputs["traps_ar_g"].astype(np.float32))
+        float[::1,:] tw_ar_g = np.asfortranarray(diff_inputs["tw_ar_g"].astype(np.float32))
+        float[::1,:] twcc_ar_g = np.asfortranarray(diff_inputs["twcc_ar_g"].astype(np.float32))
+        float[::1,:] mann_ar_g = np.asfortranarray(diff_inputs["mann_ar_g"].astype(np.float32))
+        float[::1,:] manncc_ar_g = np.asfortranarray(diff_inputs["manncc_ar_g"].astype(np.float32))
+        float[::1,:] dx_ar_g = np.asfortranarray(diff_inputs["dx_ar_g"].astype(np.float32))
+        float so_lowerlimit_g =  diff_inputs['para_ar_g'][8].astype(np.float32)  
         int frnw_col = diff_inputs["frnw_col"]
         int[::1,:] frnw_g = np.asfortranarray(diff_inputs["frnw_g"])
         int mxnbathy_g = diff_inputs['mxnbathy_g']
-        double[::1,:,:] x_bathy_g = np.asfortranarray(diff_inputs["x_bathy_g"])
-        double[::1,:,:] z_bathy_g = np.asfortranarray(diff_inputs["z_bathy_g"])
-        double[::1,:,:] mann_bathy_g = np.asfortranarray(diff_inputs["mann_bathy_g"])
+        float[::1,:,:] x_bathy_g = np.asfortranarray(diff_inputs["x_bathy_g"].astype(np.float32))
+        float[::1,:,:] z_bathy_g = np.asfortranarray(diff_inputs["z_bathy_g"].astype(np.float32))
+        float[::1,:,:] mann_bathy_g = np.asfortranarray(diff_inputs["mann_bathy_g"].astype(np.float32))
         int[::1,:] size_bathy_g = np.asfortranarray(diff_inputs["size_bathy_g"])             
         int nrow_chxsec_lookuptable = diff_inputs["nrow_chxsec_lookuptable"] 
-        double[:,:,:,:] out_chxsec_lookuptable = np.empty([11, nrow_chxsec_lookuptable, mxncomp_g, nrch_g], dtype = np.double)
-        double[:,:]     out_z_adj = np.empty([mxncomp_g, nrch_g], dtype = np.double)
+        float[:,:,:,:] out_chxsec_lookuptable = np.empty([11, nrow_chxsec_lookuptable, mxncomp_g, nrch_g], dtype = np.float32)
+        float[:,:]     out_z_adj = np.empty([mxncomp_g, nrch_g], dtype = np.float32)
 
     # call fortran channel cross-section look up table creation subroutine 
     chxsec_lookuptable(                      

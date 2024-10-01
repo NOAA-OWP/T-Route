@@ -86,7 +86,7 @@ class AbstractRouting(ABC):
     """
     
     """
-    __slots__ = ["hybrid_params", "_diffusive_domain", "_coastal_boundary_depth_df",
+    __slots__ = ["hybrid_params", "compute_params", "_diffusive_domain", "_coastal_boundary_depth_df",
                 "_diffusive_network_data", "_topobathy_df", "_refactored_diffusive_domain",
                 "_refactored_diffusive_network_data", "_refactored_reaches", 
                 "_unrefactored_topobathy_df", "_all_links", "_bad_topobathy_links", "_dataframe"]
@@ -154,8 +154,9 @@ class AbstractRouting(ABC):
 
 class MCOnly(AbstractRouting):
 
-    def __init__(self, _):
+    def __init__(self, _, __):
         self.hybrid_params = None
+        self.compute_params = None
         
         super().__init__()
 
@@ -201,8 +202,9 @@ class MCOnly(AbstractRouting):
 
 class MCwithDiffusive(AbstractRouting):
 
-    def __init__(self, hybrid_params):
+    def __init__(self, hybrid_params, compute_params):
         self.hybrid_params = hybrid_params
+        self.compute_params = compute_params
         
         super().__init__()
     
@@ -312,17 +314,19 @@ class MCwithDiffusive(AbstractRouting):
 
             # ==== remove diffusive domain segs from MC domain ====        
             # drop indices from param_df. Make sure when mainstem_segs accidently includes lake ids, exclude them 
-            # from id list to be dropped from dataframe as dataframe only handles channel parameters. 
-            existing_indicies_in_dataframe = [id for id in mainstem_segs if id in dataframe.index]
-            dataframe = dataframe.drop(existing_indicies_in_dataframe)
-            
-            # remove keys from connections dictionary
-            for s in mainstem_segs:
-                connections.pop(s)
+            # from id list to be dropped from dataframe as dataframe only handles channel parameters.     
+            # Skip this process for enabling the exchange of flow between MC and diffusive during runtime.
+            if 'hybrid-routing' not in self.compute_params['compute_kernel']:
+                existing_indicies_in_dataframe = [id for id in mainstem_segs if id in dataframe.index]
+                dataframe = dataframe.drop(existing_indicies_in_dataframe)
+                
+                # remove keys from connections dictionary
+                for s in mainstem_segs:
+                    connections.pop(s)
 
-            # update downstream connections of trib segs
-            for us in trib_segs:
-                connections[us] = []
+                # update downstream connections of trib segs
+                for us in trib_segs:
+                    connections[us] = []
 
         return dataframe, connections
 
@@ -381,9 +385,9 @@ class MCwithDiffusive(AbstractRouting):
 
 class MCwithDiffusiveNatlXSectionNonRefactored(MCwithDiffusive):
 
-    def __init__(self, hybrid_params):
+    def __init__(self, hybrid_params, compute_params):
 
-        super().__init__(hybrid_params = hybrid_params)
+        super().__init__(hybrid_params = hybrid_params, compute_params=compute_params)
 
     @property
     def topobathy_df(self):
@@ -431,9 +435,9 @@ class MCwithDiffusiveNatlXSectionNonRefactored(MCwithDiffusive):
 
 class MCwithDiffusiveNatlXSectionRefactored(MCwithDiffusive):
 
-    def __init__(self, hybrid_params):
+    def __init__(self, hybrid_params, compute_params):
         
-        super().__init__(hybrid_params = hybrid_params)
+        super().__init__(hybrid_params = hybrid_params, compute_params=compute_params)
 
     @property
     def topobathy_df(self):

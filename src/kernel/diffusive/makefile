@@ -12,18 +12,26 @@ else
 FCFLAGS = $(F90FLAGSGFORTRAN)
 endif
 
-diffusive.o: diffusive.f90
+diffusive.o: diffusive.f90 precis.mod
 	$(FC) $(FCFLAGS) -o $@ $<
 
 pydiffusive.o: pydiffusive.f90
 	$(FC) $(FCFLAGS) -o $@ $<
 
-chxsec_lookuptable.o: chxsec_lookuptable.f90
+chxsec_lookuptable.o: chxsec_lookuptable.f90 precis.mod
 	$(FC) $(FCFLAGS) -o $@ $<
 
 pychxsec_lookuptable.o: pychxsec_lookuptable.f90
 	$(FC) $(FCFLAGS) -o $@ $<
 
+diffusive_lightweight.o: diffusive_lightweight.f90 precis.mod
+	$(FC) $(FCFLAGS) -o $@ $<
+
+pydiffusive_lightweight.o: pydiffusive_lightweight.f90
+	$(FC) $(FCFLAGS) -o $@ $<
+
+precis.mod: varPrecision.f90
+	$(FC) $(FCFLAGS) $<
 
 install:
 	cp *.o ../../../src/troute-routing/troute/routing/fast_reach
@@ -38,3 +46,8 @@ clean:
 	rm -f ../../../src/troute-routing/troute/routing/fast_reach/pychxsec_lookuptable.o
 	rm -f ../../../src/troute-routing/troute/routing/fast_reach/chxsec_lookuptable.c
 	rm -f ../../../src/troute-routing/troute/routing/fast_reach/chxsec_lookuptable.cpython*.so
+	rm -f ../../../src/troute-routing/troute/routing/fast_reach/diffusive_lightweight.o
+	rm -f ../../../src/troute-routing/troute/routing/fast_reach/pydiffusive_lightweight.o
+	rm -f ../../../src/troute-routing/troute/routing/fast_reach/diffusive_lightweight.c
+	rm -f ../../../src/troute-routing/troute/routing/fast_reach/diffusive_lightweight.cpython*.so
+
