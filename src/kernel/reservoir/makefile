@@ -1,5 +1,5 @@
-NETCDFINC := -I$(NETCDFINC) $(shell nc-config --fflags)
-NETCDFLIB := $(shell nc-config --flibs)
+NETCDFINC := -I$(NETCDFINC) $(shell nf-config --fflags)
+NETCDFLIB := $(shell nf-config --flibs)
 COMPILER90 = $(F90)
 
 F90FLAGSGFORTRAN = -w -c -ffree-form -ffree-line-length-none -fconvert=big-endian -frecord-marker=4 -static-libgfortran -lgfortran -lgcc -static-libgcc 
