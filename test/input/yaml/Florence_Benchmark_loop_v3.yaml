@@ -1,0 +1,865 @@
+#&scratch_path /glade/scratch/jamesmcc/tmp_florence_run_nudging/run_nudging_nwm_channel-only
+---
+#initial input parameters
+log_parameters:
+    log_level: DEBUG # choices CRITICAL 50, ERROR 40, WARNING 30, INFO 20, DEBUG 10, NOTSET 0. Ex. Choosing WARNING will print WARNING, ERROR, and CRITICAL logs nothing else. 
+    verbose: true  # verbose output (leave blank for quiet output.)
+    showtiming: true  # set the showtiming (omit flag for no timing information.)
+    debuglevel: 1  # set the debuglevel for additional console output.
+network_topology_parameters:
+    supernetwork_parameters:
+        title_string: Custom Input Example (using Florence-Event Cutout datafile)
+        geo_file_path: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/NWM/DOMAIN/Route_Link.nc"
+        # mask_file_path: "./Florence2Mask.bigbasins_segs"
+        # mask_layer_string: ""
+        # mask_driver_string: "csv"
+        # mask_key: 0
+        break_network_at_gages: true
+        columns:
+            key: "link"
+            downstream: "to"
+            dx: "Length"
+            n: "n"  # TODO: rename to `manningn`
+            ncc: "nCC"  # TODO: rename to `mannningncc`
+            s0: "So"  # TODO: rename to `bedslope`
+            bw: "BtmWdth"  # TODO: rename to `bottomwidth`
+            waterbody: "NHDWaterbodyComID"
+            gages: "gages"
+            tw: "TopWdth"  # TODO: rename to `topwidth`
+            twcc: "TopWdthCC"  # TODO: rename to `topwidthcc`
+            alt: "alt"
+            musk: "MusK"
+            musx: "MusX"
+            cs: "ChSlp"  # TODO: rename to `sideslope`
+        waterbody_null_code: -9999
+        terminal_code: 0
+        driver_string: NetCDF
+        layer_string: 0
+    #waterbody parameters and assignments from lake parm file
+    waterbody_parameters:
+        break_network_at_waterbodies: true  # replace waterbodies in the route-link dataset with segments representing the reservoir and calculate to divide the computation (leave blank for no splitting.)
+        level_pool:
+            #WRF-Hydro lake parm file
+            level_pool_waterbody_parameter_file_path: tmp_florence_run_nudging/run_nudging_nwm_channel-only/NWM/DOMAIN/LAKEPARM.nc
+            level_pool_waterbody_id: lake_id
+            level_pool_waterbody_area: LkArea
+            level_pool_weir_elevation: WeirE
+            level_pool_waterbody_max_elevation: LkMxE
+            level_pool_outfall_weir_coefficient: WeirC
+            level_pool_outfall_weir_length: WeirL
+            level_pool_overall_dam_length: DamL
+            level_pool_orifice_elevation: OrificeE
+            level_pool_orifice_coefficient: OrificeC
+            level_pool_orifice_area: OrificeA
+compute_parameters:
+    parallel_compute_method: by-subnetwork-jit-clustered
+    compute_kernel: V02-structured
+    assume_short_ts: true
+    subnetwork_target_size: 500
+    cpu-pool: 12
+    restart_parameters:
+        # (base) halgren@cheyenne2:~/t-route-jsh/src/python_routing_v02> ls /glade/scratch/jamesmcc/tmp_florence_run_nudging/run_nudging_nwm_channel-only/HYDRO_RST.2018-09-01_00:00_DOMAIN1
+        # /glade/scratch/jamesmcc/tmp_florence_run_nudging/run_nudging_nwm_channel-only/HYDRO_RST.2018-09-01_00:00_DOMAIN1
+        # (base) halgren@cheyenne2:~/t-route-jsh/src/python_routing_v02> ls /glade/scratch/jamesmcc/tmp_florence_run_nudging/run_nudging_nwm_channel-only/nudgingLastObs.2018-09-01_00\:00\:00.nc
+        # /glade/scratch/jamesmcc/tmp_florence_run_nudging/run_nudging_nwm_channel-only/nudgingLastObs.2018-09-01_00:00:00.nc
+        # (base) halgren@cheyenne2:~/t-route-jsh/src/python_routing_v02> ls -al ../../test/input/florence_fullres/nudgingTimeSliceObs_calibration
+        # /glade/work/jamesmcc/domains/private/florence_v21/NWM/nudgingTimeSliceObs_calibration
+
+        #WRF-Hydro channels restart file
+        wrf_hydro_channel_restart_file: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/HYDRO_RST.2018-09-01_00:00_DOMAIN1"
+        #WRF-Hydro channels ID crosswalk file
+        wrf_hydro_channel_ID_crosswalk_file: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/NWM/DOMAIN/Route_Link.nc"
+        wrf_hydro_channel_ID_crosswalk_file_field_name: link
+        wrf_hydro_channel_restart_upstream_flow_field_name: qlink1
+        wrf_hydro_channel_restart_downstream_flow_field_name: qlink2
+        wrf_hydro_channel_restart_depth_flow_field_name: hlink
+        #WRF-Hydro waterbodies restart file
+        wrf_hydro_waterbody_restart_file: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/HYDRO_RST.2018-09-01_00:00_DOMAIN1"
+        #WRF-Hydro waterbody ID crosswalk file
+        wrf_hydro_waterbody_ID_crosswalk_file: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/NWM/DOMAIN/LAKEPARM.nc"
+        wrf_hydro_waterbody_ID_crosswalk_file_field_name: lake_id
+        #WRF-Hydro waterbody crosswalk filter file
+        wrf_hydro_waterbody_crosswalk_filter_file: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/NWM/DOMAIN/Route_Link.nc"
+        wrf_hydro_waterbody_crosswalk_filter_file_field_name: NHDWaterbodyComID
+    forcing_parameters:
+        qts_subdivisions: 1  # number of timesteps per forcing (qlateral) timestep.
+        dt: 300
+        qlat_input_folder: "tmp_florence_run_nudging/run_nudging_nwm_channel-only"
+        qlat_file_index_col: feature_id
+        qlat_file_value_col: q_lateral
+        qlat_forcing_sets:
+            - nts: 12
+              qlat_files:
+                  - 201809010005.CHRTOUT_DOMAIN1
+                  - 201809010010.CHRTOUT_DOMAIN1
+                  - 201809010015.CHRTOUT_DOMAIN1
+                  - 201809010020.CHRTOUT_DOMAIN1
+                  - 201809010025.CHRTOUT_DOMAIN1
+                  - 201809010030.CHRTOUT_DOMAIN1
+                  - 201809010035.CHRTOUT_DOMAIN1
+                  - 201809010040.CHRTOUT_DOMAIN1
+                  - 201809010045.CHRTOUT_DOMAIN1
+                  - 201809010050.CHRTOUT_DOMAIN1
+                  - 201809010055.CHRTOUT_DOMAIN1
+                  - 201809010100.CHRTOUT_DOMAIN1
+            - nts: 24
+              qlat_files:
+                  - 201809010105.CHRTOUT_DOMAIN1
+                  - 201809010110.CHRTOUT_DOMAIN1
+                  - 201809010115.CHRTOUT_DOMAIN1
+                  - 201809010120.CHRTOUT_DOMAIN1
+                  - 201809010125.CHRTOUT_DOMAIN1
+                  - 201809010130.CHRTOUT_DOMAIN1
+                  - 201809010135.CHRTOUT_DOMAIN1
+                  - 201809010140.CHRTOUT_DOMAIN1
+                  - 201809010145.CHRTOUT_DOMAIN1
+                  - 201809010150.CHRTOUT_DOMAIN1
+                  - 201809010155.CHRTOUT_DOMAIN1
+                  - 201809010200.CHRTOUT_DOMAIN1
+                  - 201809010205.CHRTOUT_DOMAIN1
+                  - 201809010210.CHRTOUT_DOMAIN1
+                  - 201809010215.CHRTOUT_DOMAIN1
+                  - 201809010220.CHRTOUT_DOMAIN1
+                  - 201809010225.CHRTOUT_DOMAIN1
+                  - 201809010230.CHRTOUT_DOMAIN1
+                  - 201809010235.CHRTOUT_DOMAIN1
+                  - 201809010240.CHRTOUT_DOMAIN1
+                  - 201809010245.CHRTOUT_DOMAIN1
+                  - 201809010250.CHRTOUT_DOMAIN1
+                  - 201809010255.CHRTOUT_DOMAIN1
+                  - 201809010300.CHRTOUT_DOMAIN1
+            - nts: 60
+              qlat_files:
+                  - 201809010305.CHRTOUT_DOMAIN1
+                  - 201809010310.CHRTOUT_DOMAIN1
+                  - 201809010315.CHRTOUT_DOMAIN1
+                  - 201809010320.CHRTOUT_DOMAIN1
+                  - 201809010325.CHRTOUT_DOMAIN1
+                  - 201809010330.CHRTOUT_DOMAIN1
+                  - 201809010335.CHRTOUT_DOMAIN1
+                  - 201809010340.CHRTOUT_DOMAIN1
+                  - 201809010345.CHRTOUT_DOMAIN1
+                  - 201809010350.CHRTOUT_DOMAIN1
+                  - 201809010355.CHRTOUT_DOMAIN1
+                  - 201809010400.CHRTOUT_DOMAIN1
+                  - 201809010405.CHRTOUT_DOMAIN1
+                  - 201809010410.CHRTOUT_DOMAIN1
+                  - 201809010415.CHRTOUT_DOMAIN1
+                  - 201809010420.CHRTOUT_DOMAIN1
+                  - 201809010425.CHRTOUT_DOMAIN1
+                  - 201809010430.CHRTOUT_DOMAIN1
+                  - 201809010435.CHRTOUT_DOMAIN1
+                  - 201809010440.CHRTOUT_DOMAIN1
+                  - 201809010445.CHRTOUT_DOMAIN1
+                  - 201809010450.CHRTOUT_DOMAIN1
+                  - 201809010455.CHRTOUT_DOMAIN1
+                  - 201809010500.CHRTOUT_DOMAIN1
+                  - 201809010505.CHRTOUT_DOMAIN1
+                  - 201809010510.CHRTOUT_DOMAIN1
+                  - 201809010515.CHRTOUT_DOMAIN1
+                  - 201809010520.CHRTOUT_DOMAIN1
+                  - 201809010525.CHRTOUT_DOMAIN1
+                  - 201809010530.CHRTOUT_DOMAIN1
+                  - 201809010535.CHRTOUT_DOMAIN1
+                  - 201809010540.CHRTOUT_DOMAIN1
+                  - 201809010545.CHRTOUT_DOMAIN1
+                  - 201809010550.CHRTOUT_DOMAIN1
+                  - 201809010555.CHRTOUT_DOMAIN1
+                  - 201809010600.CHRTOUT_DOMAIN1
+                  - 201809010605.CHRTOUT_DOMAIN1
+                  - 201809010610.CHRTOUT_DOMAIN1
+                  - 201809010615.CHRTOUT_DOMAIN1
+                  - 201809010620.CHRTOUT_DOMAIN1
+                  - 201809010625.CHRTOUT_DOMAIN1
+                  - 201809010630.CHRTOUT_DOMAIN1
+                  - 201809010635.CHRTOUT_DOMAIN1
+                  - 201809010640.CHRTOUT_DOMAIN1
+                  - 201809010645.CHRTOUT_DOMAIN1
+                  - 201809010650.CHRTOUT_DOMAIN1
+                  - 201809010655.CHRTOUT_DOMAIN1
+                  - 201809010700.CHRTOUT_DOMAIN1
+                  - 201809010705.CHRTOUT_DOMAIN1
+                  - 201809010710.CHRTOUT_DOMAIN1
+                  - 201809010715.CHRTOUT_DOMAIN1
+                  - 201809010720.CHRTOUT_DOMAIN1
+                  - 201809010725.CHRTOUT_DOMAIN1
+                  - 201809010730.CHRTOUT_DOMAIN1
+                  - 201809010735.CHRTOUT_DOMAIN1
+                  - 201809010740.CHRTOUT_DOMAIN1
+                  - 201809010745.CHRTOUT_DOMAIN1
+                  - 201809010750.CHRTOUT_DOMAIN1
+                  - 201809010755.CHRTOUT_DOMAIN1
+                  - 201809010800.CHRTOUT_DOMAIN1
+            - nts: 48
+              qlat_files:
+                  - 201809010805.CHRTOUT_DOMAIN1
+                  - 201809010810.CHRTOUT_DOMAIN1
+                  - 201809010815.CHRTOUT_DOMAIN1
+                  - 201809010820.CHRTOUT_DOMAIN1
+                  - 201809010825.CHRTOUT_DOMAIN1
+                  - 201809010830.CHRTOUT_DOMAIN1
+                  - 201809010835.CHRTOUT_DOMAIN1
+                  - 201809010840.CHRTOUT_DOMAIN1
+                  - 201809010845.CHRTOUT_DOMAIN1
+                  - 201809010850.CHRTOUT_DOMAIN1
+                  - 201809010855.CHRTOUT_DOMAIN1
+                  - 201809010900.CHRTOUT_DOMAIN1
+                  - 201809010905.CHRTOUT_DOMAIN1
+                  - 201809010910.CHRTOUT_DOMAIN1
+                  - 201809010915.CHRTOUT_DOMAIN1
+                  - 201809010920.CHRTOUT_DOMAIN1
+                  - 201809010925.CHRTOUT_DOMAIN1
+                  - 201809010930.CHRTOUT_DOMAIN1
+                  - 201809010935.CHRTOUT_DOMAIN1
+                  - 201809010940.CHRTOUT_DOMAIN1
+                  - 201809010945.CHRTOUT_DOMAIN1
+                  - 201809010950.CHRTOUT_DOMAIN1
+                  - 201809010955.CHRTOUT_DOMAIN1
+                  - 201809011000.CHRTOUT_DOMAIN1
+                  - 201809011005.CHRTOUT_DOMAIN1
+                  - 201809011010.CHRTOUT_DOMAIN1
+                  - 201809011015.CHRTOUT_DOMAIN1
+                  - 201809011020.CHRTOUT_DOMAIN1
+                  - 201809011025.CHRTOUT_DOMAIN1
+                  - 201809011030.CHRTOUT_DOMAIN1
+                  - 201809011035.CHRTOUT_DOMAIN1
+                  - 201809011040.CHRTOUT_DOMAIN1
+                  - 201809011045.CHRTOUT_DOMAIN1
+                  - 201809011050.CHRTOUT_DOMAIN1
+                  - 201809011055.CHRTOUT_DOMAIN1
+                  - 201809011100.CHRTOUT_DOMAIN1
+                  - 201809011105.CHRTOUT_DOMAIN1
+                  - 201809011110.CHRTOUT_DOMAIN1
+                  - 201809011115.CHRTOUT_DOMAIN1
+                  - 201809011120.CHRTOUT_DOMAIN1
+                  - 201809011125.CHRTOUT_DOMAIN1
+                  - 201809011130.CHRTOUT_DOMAIN1
+                  - 201809011135.CHRTOUT_DOMAIN1
+                  - 201809011140.CHRTOUT_DOMAIN1
+                  - 201809011145.CHRTOUT_DOMAIN1
+                  - 201809011150.CHRTOUT_DOMAIN1
+                  - 201809011155.CHRTOUT_DOMAIN1
+                  - 201809011200.CHRTOUT_DOMAIN1
+            - nts: 144
+              qlat_files:
+                  - 201809011205.CHRTOUT_DOMAIN1
+                  - 201809011210.CHRTOUT_DOMAIN1
+                  - 201809011215.CHRTOUT_DOMAIN1
+                  - 201809011220.CHRTOUT_DOMAIN1
+                  - 201809011225.CHRTOUT_DOMAIN1
+                  - 201809011230.CHRTOUT_DOMAIN1
+                  - 201809011235.CHRTOUT_DOMAIN1
+                  - 201809011240.CHRTOUT_DOMAIN1
+                  - 201809011245.CHRTOUT_DOMAIN1
+                  - 201809011250.CHRTOUT_DOMAIN1
+                  - 201809011255.CHRTOUT_DOMAIN1
+                  - 201809011300.CHRTOUT_DOMAIN1
+                  - 201809011305.CHRTOUT_DOMAIN1
+                  - 201809011310.CHRTOUT_DOMAIN1
+                  - 201809011315.CHRTOUT_DOMAIN1
+                  - 201809011320.CHRTOUT_DOMAIN1
+                  - 201809011325.CHRTOUT_DOMAIN1
+                  - 201809011330.CHRTOUT_DOMAIN1
+                  - 201809011335.CHRTOUT_DOMAIN1
+                  - 201809011340.CHRTOUT_DOMAIN1
+                  - 201809011345.CHRTOUT_DOMAIN1
+                  - 201809011350.CHRTOUT_DOMAIN1
+                  - 201809011355.CHRTOUT_DOMAIN1
+                  - 201809011400.CHRTOUT_DOMAIN1
+                  - 201809011405.CHRTOUT_DOMAIN1
+                  - 201809011410.CHRTOUT_DOMAIN1
+                  - 201809011415.CHRTOUT_DOMAIN1
+                  - 201809011420.CHRTOUT_DOMAIN1
+                  - 201809011425.CHRTOUT_DOMAIN1
+                  - 201809011430.CHRTOUT_DOMAIN1
+                  - 201809011435.CHRTOUT_DOMAIN1
+                  - 201809011440.CHRTOUT_DOMAIN1
+                  - 201809011445.CHRTOUT_DOMAIN1
+                  - 201809011450.CHRTOUT_DOMAIN1
+                  - 201809011455.CHRTOUT_DOMAIN1
+                  - 201809011500.CHRTOUT_DOMAIN1
+                  - 201809011505.CHRTOUT_DOMAIN1
+                  - 201809011510.CHRTOUT_DOMAIN1
+                  - 201809011515.CHRTOUT_DOMAIN1
+                  - 201809011520.CHRTOUT_DOMAIN1
+                  - 201809011525.CHRTOUT_DOMAIN1
+                  - 201809011530.CHRTOUT_DOMAIN1
+                  - 201809011535.CHRTOUT_DOMAIN1
+                  - 201809011540.CHRTOUT_DOMAIN1
+                  - 201809011545.CHRTOUT_DOMAIN1
+                  - 201809011550.CHRTOUT_DOMAIN1
+                  - 201809011555.CHRTOUT_DOMAIN1
+                  - 201809011600.CHRTOUT_DOMAIN1
+                  - 201809011605.CHRTOUT_DOMAIN1
+                  - 201809011610.CHRTOUT_DOMAIN1
+                  - 201809011615.CHRTOUT_DOMAIN1
+                  - 201809011620.CHRTOUT_DOMAIN1
+                  - 201809011625.CHRTOUT_DOMAIN1
+                  - 201809011630.CHRTOUT_DOMAIN1
+                  - 201809011635.CHRTOUT_DOMAIN1
+                  - 201809011640.CHRTOUT_DOMAIN1
+                  - 201809011645.CHRTOUT_DOMAIN1
+                  - 201809011650.CHRTOUT_DOMAIN1
+                  - 201809011655.CHRTOUT_DOMAIN1
+                  - 201809011700.CHRTOUT_DOMAIN1
+                  - 201809011705.CHRTOUT_DOMAIN1
+                  - 201809011710.CHRTOUT_DOMAIN1
+                  - 201809011715.CHRTOUT_DOMAIN1
+                  - 201809011720.CHRTOUT_DOMAIN1
+                  - 201809011725.CHRTOUT_DOMAIN1
+                  - 201809011730.CHRTOUT_DOMAIN1
+                  - 201809011735.CHRTOUT_DOMAIN1
+                  - 201809011740.CHRTOUT_DOMAIN1
+                  - 201809011745.CHRTOUT_DOMAIN1
+                  - 201809011750.CHRTOUT_DOMAIN1
+                  - 201809011755.CHRTOUT_DOMAIN1
+                  - 201809011800.CHRTOUT_DOMAIN1
+                  - 201809011805.CHRTOUT_DOMAIN1
+                  - 201809011810.CHRTOUT_DOMAIN1
+                  - 201809011815.CHRTOUT_DOMAIN1
+                  - 201809011820.CHRTOUT_DOMAIN1
+                  - 201809011825.CHRTOUT_DOMAIN1
+                  - 201809011830.CHRTOUT_DOMAIN1
+                  - 201809011835.CHRTOUT_DOMAIN1
+                  - 201809011840.CHRTOUT_DOMAIN1
+                  - 201809011845.CHRTOUT_DOMAIN1
+                  - 201809011850.CHRTOUT_DOMAIN1
+                  - 201809011855.CHRTOUT_DOMAIN1
+                  - 201809011900.CHRTOUT_DOMAIN1
+                  - 201809011905.CHRTOUT_DOMAIN1
+                  - 201809011910.CHRTOUT_DOMAIN1
+                  - 201809011915.CHRTOUT_DOMAIN1
+                  - 201809011920.CHRTOUT_DOMAIN1
+                  - 201809011925.CHRTOUT_DOMAIN1
+                  - 201809011930.CHRTOUT_DOMAIN1
+                  - 201809011935.CHRTOUT_DOMAIN1
+                  - 201809011940.CHRTOUT_DOMAIN1
+                  - 201809011945.CHRTOUT_DOMAIN1
+                  - 201809011950.CHRTOUT_DOMAIN1
+                  - 201809011955.CHRTOUT_DOMAIN1
+                  - 201809012000.CHRTOUT_DOMAIN1
+                  - 201809012005.CHRTOUT_DOMAIN1
+                  - 201809012010.CHRTOUT_DOMAIN1
+                  - 201809012015.CHRTOUT_DOMAIN1
+                  - 201809012020.CHRTOUT_DOMAIN1
+                  - 201809012025.CHRTOUT_DOMAIN1
+                  - 201809012030.CHRTOUT_DOMAIN1
+                  - 201809012035.CHRTOUT_DOMAIN1
+                  - 201809012040.CHRTOUT_DOMAIN1
+                  - 201809012045.CHRTOUT_DOMAIN1
+                  - 201809012050.CHRTOUT_DOMAIN1
+                  - 201809012055.CHRTOUT_DOMAIN1
+                  - 201809012100.CHRTOUT_DOMAIN1
+                  - 201809012105.CHRTOUT_DOMAIN1
+                  - 201809012110.CHRTOUT_DOMAIN1
+                  - 201809012115.CHRTOUT_DOMAIN1
+                  - 201809012120.CHRTOUT_DOMAIN1
+                  - 201809012125.CHRTOUT_DOMAIN1
+                  - 201809012130.CHRTOUT_DOMAIN1
+                  - 201809012135.CHRTOUT_DOMAIN1
+                  - 201809012140.CHRTOUT_DOMAIN1
+                  - 201809012145.CHRTOUT_DOMAIN1
+                  - 201809012150.CHRTOUT_DOMAIN1
+                  - 201809012155.CHRTOUT_DOMAIN1
+                  - 201809012200.CHRTOUT_DOMAIN1
+                  - 201809012205.CHRTOUT_DOMAIN1
+                  - 201809012210.CHRTOUT_DOMAIN1
+                  - 201809012215.CHRTOUT_DOMAIN1
+                  - 201809012220.CHRTOUT_DOMAIN1
+                  - 201809012225.CHRTOUT_DOMAIN1
+                  - 201809012230.CHRTOUT_DOMAIN1
+                  - 201809012235.CHRTOUT_DOMAIN1
+                  - 201809012240.CHRTOUT_DOMAIN1
+                  - 201809012245.CHRTOUT_DOMAIN1
+                  - 201809012250.CHRTOUT_DOMAIN1
+                  - 201809012255.CHRTOUT_DOMAIN1
+                  - 201809012300.CHRTOUT_DOMAIN1
+                  - 201809012305.CHRTOUT_DOMAIN1
+                  - 201809012310.CHRTOUT_DOMAIN1
+                  - 201809012315.CHRTOUT_DOMAIN1
+                  - 201809012320.CHRTOUT_DOMAIN1
+                  - 201809012325.CHRTOUT_DOMAIN1
+                  - 201809012330.CHRTOUT_DOMAIN1
+                  - 201809012335.CHRTOUT_DOMAIN1
+                  - 201809012340.CHRTOUT_DOMAIN1
+                  - 201809012345.CHRTOUT_DOMAIN1
+                  - 201809012350.CHRTOUT_DOMAIN1
+                  - 201809012355.CHRTOUT_DOMAIN1
+                  - 201809020000.CHRTOUT_DOMAIN1
+    data_assimilation_parameters:
+        data_assimilation_timeslices_folder: "nudgingTimeSliceObs_calibration"
+        wrf_hydro_da_channel_ID_crosswalk_file: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/NWM/DOMAIN/Route_Link.nc"
+        wrf_hydro_lastobs_file: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/nudgingLastObs.2018-09-01_00:00:00.nc"
+        wrf_hydro_lastobs_lead_time_relative_to_simulation_start_time: 0
+        lastobs_output_folder: "/glade/work/halgren/longterm_test_files/Florence/"
+        wrf_lastobs_type: "obs-based"
+        data_assimilation_sets:
+            - usgs_timeslice_files:
+                - 2018-09-01_00:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_00:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_00:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_00:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_01:00:00.15min.usgsTimeSlice.ncdf
+            - usgs_timeslice_files:
+                - 2018-09-01_01:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_01:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_01:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_01:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_02:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_02:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_02:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_02:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_03:00:00.15min.usgsTimeSlice.ncdf
+            - usgs_timeslice_files:
+                - 2018-09-01_03:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_03:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_03:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_03:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_04:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_04:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_04:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_04:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_05:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_05:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_05:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_05:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_06:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_06:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_06:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_06:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_07:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_07:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_07:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_07:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_08:00:00.15min.usgsTimeSlice.ncdf
+            - usgs_timeslice_files:
+                - 2018-09-01_08:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_08:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_08:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_08:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_09:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_09:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_09:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_09:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_10:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_10:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_10:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_10:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_11:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_11:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_11:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_11:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_12:00:00.15min.usgsTimeSlice.ncdf
+            - usgs_timeslice_files:
+                - 2018-09-01_12:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_12:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_12:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_12:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_13:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_13:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_13:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_13:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_14:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_14:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_14:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_14:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_15:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_15:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_15:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_15:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_16:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_16:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_16:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_16:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_17:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_17:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_17:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_17:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_18:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_18:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_18:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_18:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_19:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_19:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_19:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_19:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_20:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_20:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_20:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_20:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_21:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_21:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_21:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_21:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_22:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_22:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_22:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_22:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_23:00:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_23:15:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_23:30:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-01_23:45:00.15min.usgsTimeSlice.ncdf
+                - 2018-09-02_00:00:00.15min.usgsTimeSlice.ncdf
+    #WRF-Hydro restart files
+#output file parameters
+
+output_parameters:
+    chrtout_output:
+        # Write t-route data to WRF-Hydro restart files
+        wrf_hydro_channel_output_source_folder: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/"
+        wrf_hydro_channel_final_output_folder: "/glade/u/home/jhreha/t-route/test/output/"
+        # wrf_hydro_channel_output_file_pattern_filter: "*.CHRTOUT_DOMAIN1"
+        wrf_hydro_channel_output_new_extension: "TROUTE"
+    hydro_rst_output:
+        # Write t-route data to WRF-Hydro CHRTOUT files
+        wrf_hydro_channel_restart_source_directory: "tmp_florence_run_nudging/run_nudging_nwm_channel-only/"
+        wrf_hydro_channel_restart_output_directory: "/glade/u/home/jhreha/t-route/test/output/"
+        wrf_hydro_channel_restart_pattern_filter: "HYDRO_RST.*"
+        wrf_hydro_channel_restart_new_extension: "TROUTE"
+    network_output:
+        supernetwork_stats: true
+    #output location for csv file
+    # csv_output:
+    #     csv_output_folder: "../../test/output/text"
+    #     csv_output_segments: [4185713, 2743396, 4153198, 4186293, 4186169]
+    #out location for nc file
+    nc_output_folder: "../../test/output/text"
+    wrf_hydro_parity_check:
+        parity_check_input_folder: "tmp_florence_run_nudging/run_nudging_nwm_channel-only"
+        parity_check_file_index_col: feature_id
+        parity_check_file_value_col: streamflow
+        # parity_check_compare_node: 8777309  # below lake Butner
+        # parity_check_compare_node: 8777125  # above lake Butner
+        # parity_check_compare_node: 8835386
+        # parity_check_compare_node: 933020089
+        # parity_check_compare_node: 10975909
+        # parity_check_compare_node: 8777701
+        # parity_check_compare_node: 8778877
+        # parity_check_compare_node: 8778771  # Headwater
+        # parity_check_compare_node: 8778459  # Midwater
+        # parity_check_compare_node: 8778201  # Midwater
+        # parity_check_compare_node: 8777277  # Just above gage
+        # parity_check_compare_node: 8777275  # Just above gage
+        # parity_check_compare_node: 8777381  # At gage
+        # parity_check_compare_node: 8777409  # Just above 8777353
+        # parity_check_compare_node: 8777353  # Just above 8777387 -- next upstreams [8777369, 8777409]
+        # parity_check_compare_node: 8777351  # Just above 8777387
+        # parity_check_compare_node: 8777451  # Just above 8777387 -- next upstreams [8777455, 8777489]
+        # parity_check_compare_node: 8777387  # Just above 8777383 -- next upstreams [8777351, 8777353]
+        # parity_check_compare_node: 8777383  # Below gage
+        # parity_check_compare_node: 8777419  # Below gage
+        # parity_check_compare_node: 8777523  # Below gage
+        # parity_check_compare_node: 8777535  # Below gage
+
+        # Headwaters: 
+        # parity_check_compare_node: 8780393 
+        # parity_check_compare_node: 8780393
+        # parity_check_compare_node: 8778707 # Gage
+
+        # parity_check_compare_node: 8780581 # Above a gage @ 8778707 
+
+        # parity_check_compare_node: 8780561 # Below a gage @ 8778707
+
+        # reservoir inflows: 
+        parity_check_compare_node: 8778363  # (this is a gage, flows into 8776313)
+        # parity_check_compare_node: 8777125  # (inflow to Lake Butner)
+        # parity_check_compare_node: 8782449  # (ungaged inflow to Falls Lake 166737717)
+
+        reservoir outflows: 
+        # parity_check_compare_node: 8777373  # (this is a gage, flows out of  8776313)
+        # parity_check_compare_node: 8777309  # (flows out of Lake Butner)
+        # parity_check_compare_node: 166737579  # (this is a gage, flows out of Falls Lake 166737717)
+        parity_check_compare_file_sets:
+            - validation_files:
+                - 201809010005.CHRTOUT_DOMAIN1
+                - 201809010010.CHRTOUT_DOMAIN1
+                - 201809010015.CHRTOUT_DOMAIN1
+                - 201809010020.CHRTOUT_DOMAIN1
+                - 201809010025.CHRTOUT_DOMAIN1
+                - 201809010030.CHRTOUT_DOMAIN1
+                - 201809010035.CHRTOUT_DOMAIN1
+                - 201809010040.CHRTOUT_DOMAIN1
+                - 201809010045.CHRTOUT_DOMAIN1
+                - 201809010050.CHRTOUT_DOMAIN1
+                - 201809010055.CHRTOUT_DOMAIN1
+                - 201809010100.CHRTOUT_DOMAIN1
+            - validation_files:
+                - 201809010105.CHRTOUT_DOMAIN1
+                - 201809010110.CHRTOUT_DOMAIN1
+                - 201809010115.CHRTOUT_DOMAIN1
+                - 201809010120.CHRTOUT_DOMAIN1
+                - 201809010125.CHRTOUT_DOMAIN1
+                - 201809010130.CHRTOUT_DOMAIN1
+                - 201809010135.CHRTOUT_DOMAIN1
+                - 201809010140.CHRTOUT_DOMAIN1
+                - 201809010145.CHRTOUT_DOMAIN1
+                - 201809010150.CHRTOUT_DOMAIN1
+                - 201809010155.CHRTOUT_DOMAIN1
+                - 201809010200.CHRTOUT_DOMAIN1
+                - 201809010205.CHRTOUT_DOMAIN1
+                - 201809010210.CHRTOUT_DOMAIN1
+                - 201809010215.CHRTOUT_DOMAIN1
+                - 201809010220.CHRTOUT_DOMAIN1
+                - 201809010225.CHRTOUT_DOMAIN1
+                - 201809010230.CHRTOUT_DOMAIN1
+                - 201809010235.CHRTOUT_DOMAIN1
+                - 201809010240.CHRTOUT_DOMAIN1
+                - 201809010245.CHRTOUT_DOMAIN1
+                - 201809010250.CHRTOUT_DOMAIN1
+                - 201809010255.CHRTOUT_DOMAIN1
+                - 201809010300.CHRTOUT_DOMAIN1
+            - validation_files:
+                - 201809010305.CHRTOUT_DOMAIN1
+                - 201809010310.CHRTOUT_DOMAIN1
+                - 201809010315.CHRTOUT_DOMAIN1
+                - 201809010320.CHRTOUT_DOMAIN1
+                - 201809010325.CHRTOUT_DOMAIN1
+                - 201809010330.CHRTOUT_DOMAIN1
+                - 201809010335.CHRTOUT_DOMAIN1
+                - 201809010340.CHRTOUT_DOMAIN1
+                - 201809010345.CHRTOUT_DOMAIN1
+                - 201809010350.CHRTOUT_DOMAIN1
+                - 201809010355.CHRTOUT_DOMAIN1
+                - 201809010400.CHRTOUT_DOMAIN1
+                - 201809010405.CHRTOUT_DOMAIN1
+                - 201809010410.CHRTOUT_DOMAIN1
+                - 201809010415.CHRTOUT_DOMAIN1
+                - 201809010420.CHRTOUT_DOMAIN1
+                - 201809010425.CHRTOUT_DOMAIN1
+                - 201809010430.CHRTOUT_DOMAIN1
+                - 201809010435.CHRTOUT_DOMAIN1
+                - 201809010440.CHRTOUT_DOMAIN1
+                - 201809010445.CHRTOUT_DOMAIN1
+                - 201809010450.CHRTOUT_DOMAIN1
+                - 201809010455.CHRTOUT_DOMAIN1
+                - 201809010500.CHRTOUT_DOMAIN1
+                - 201809010505.CHRTOUT_DOMAIN1
+                - 201809010510.CHRTOUT_DOMAIN1
+                - 201809010515.CHRTOUT_DOMAIN1
+                - 201809010520.CHRTOUT_DOMAIN1
+                - 201809010525.CHRTOUT_DOMAIN1
+                - 201809010530.CHRTOUT_DOMAIN1
+                - 201809010535.CHRTOUT_DOMAIN1
+                - 201809010540.CHRTOUT_DOMAIN1
+                - 201809010545.CHRTOUT_DOMAIN1
+                - 201809010550.CHRTOUT_DOMAIN1
+                - 201809010555.CHRTOUT_DOMAIN1
+                - 201809010600.CHRTOUT_DOMAIN1
+                - 201809010605.CHRTOUT_DOMAIN1
+                - 201809010610.CHRTOUT_DOMAIN1
+                - 201809010615.CHRTOUT_DOMAIN1
+                - 201809010620.CHRTOUT_DOMAIN1
+                - 201809010625.CHRTOUT_DOMAIN1
+                - 201809010630.CHRTOUT_DOMAIN1
+                - 201809010635.CHRTOUT_DOMAIN1
+                - 201809010640.CHRTOUT_DOMAIN1
+                - 201809010645.CHRTOUT_DOMAIN1
+                - 201809010650.CHRTOUT_DOMAIN1
+                - 201809010655.CHRTOUT_DOMAIN1
+                - 201809010700.CHRTOUT_DOMAIN1
+                - 201809010705.CHRTOUT_DOMAIN1
+                - 201809010710.CHRTOUT_DOMAIN1
+                - 201809010715.CHRTOUT_DOMAIN1
+                - 201809010720.CHRTOUT_DOMAIN1
+                - 201809010725.CHRTOUT_DOMAIN1
+                - 201809010730.CHRTOUT_DOMAIN1
+                - 201809010735.CHRTOUT_DOMAIN1
+                - 201809010740.CHRTOUT_DOMAIN1
+                - 201809010745.CHRTOUT_DOMAIN1
+                - 201809010750.CHRTOUT_DOMAIN1
+                - 201809010755.CHRTOUT_DOMAIN1
+                - 201809010800.CHRTOUT_DOMAIN1
+            - validation_files:
+                - 201809010805.CHRTOUT_DOMAIN1
+                - 201809010810.CHRTOUT_DOMAIN1
+                - 201809010815.CHRTOUT_DOMAIN1
+                - 201809010820.CHRTOUT_DOMAIN1
+                - 201809010825.CHRTOUT_DOMAIN1
+                - 201809010830.CHRTOUT_DOMAIN1
+                - 201809010835.CHRTOUT_DOMAIN1
+                - 201809010840.CHRTOUT_DOMAIN1
+                - 201809010845.CHRTOUT_DOMAIN1
+                - 201809010850.CHRTOUT_DOMAIN1
+                - 201809010855.CHRTOUT_DOMAIN1
+                - 201809010900.CHRTOUT_DOMAIN1
+                - 201809010905.CHRTOUT_DOMAIN1
+                - 201809010910.CHRTOUT_DOMAIN1
+                - 201809010915.CHRTOUT_DOMAIN1
+                - 201809010920.CHRTOUT_DOMAIN1
+                - 201809010925.CHRTOUT_DOMAIN1
+                - 201809010930.CHRTOUT_DOMAIN1
+                - 201809010935.CHRTOUT_DOMAIN1
+                - 201809010940.CHRTOUT_DOMAIN1
+                - 201809010945.CHRTOUT_DOMAIN1
+                - 201809010950.CHRTOUT_DOMAIN1
+                - 201809010955.CHRTOUT_DOMAIN1
+                - 201809011000.CHRTOUT_DOMAIN1
+                - 201809011005.CHRTOUT_DOMAIN1
+                - 201809011010.CHRTOUT_DOMAIN1
+                - 201809011015.CHRTOUT_DOMAIN1
+                - 201809011020.CHRTOUT_DOMAIN1
+                - 201809011025.CHRTOUT_DOMAIN1
+                - 201809011030.CHRTOUT_DOMAIN1
+                - 201809011035.CHRTOUT_DOMAIN1
+                - 201809011040.CHRTOUT_DOMAIN1
+                - 201809011045.CHRTOUT_DOMAIN1
+                - 201809011050.CHRTOUT_DOMAIN1
+                - 201809011055.CHRTOUT_DOMAIN1
+                - 201809011100.CHRTOUT_DOMAIN1
+                - 201809011105.CHRTOUT_DOMAIN1
+                - 201809011110.CHRTOUT_DOMAIN1
+                - 201809011115.CHRTOUT_DOMAIN1
+                - 201809011120.CHRTOUT_DOMAIN1
+                - 201809011125.CHRTOUT_DOMAIN1
+                - 201809011130.CHRTOUT_DOMAIN1
+                - 201809011135.CHRTOUT_DOMAIN1
+                - 201809011140.CHRTOUT_DOMAIN1
+                - 201809011145.CHRTOUT_DOMAIN1
+                - 201809011150.CHRTOUT_DOMAIN1
+                - 201809011155.CHRTOUT_DOMAIN1
+                - 201809011200.CHRTOUT_DOMAIN1
+            - validation_files:
+                - 201809011205.CHRTOUT_DOMAIN1
+                - 201809011210.CHRTOUT_DOMAIN1
+                - 201809011215.CHRTOUT_DOMAIN1
+                - 201809011220.CHRTOUT_DOMAIN1
+                - 201809011225.CHRTOUT_DOMAIN1
+                - 201809011230.CHRTOUT_DOMAIN1
+                - 201809011235.CHRTOUT_DOMAIN1
+                - 201809011240.CHRTOUT_DOMAIN1
+                - 201809011245.CHRTOUT_DOMAIN1
+                - 201809011250.CHRTOUT_DOMAIN1
+                - 201809011255.CHRTOUT_DOMAIN1
+                - 201809011300.CHRTOUT_DOMAIN1
+                - 201809011305.CHRTOUT_DOMAIN1
+                - 201809011310.CHRTOUT_DOMAIN1
+                - 201809011315.CHRTOUT_DOMAIN1
+                - 201809011320.CHRTOUT_DOMAIN1
+                - 201809011325.CHRTOUT_DOMAIN1
+                - 201809011330.CHRTOUT_DOMAIN1
+                - 201809011335.CHRTOUT_DOMAIN1
+                - 201809011340.CHRTOUT_DOMAIN1
+                - 201809011345.CHRTOUT_DOMAIN1
+                - 201809011350.CHRTOUT_DOMAIN1
+                - 201809011355.CHRTOUT_DOMAIN1
+                - 201809011400.CHRTOUT_DOMAIN1
+                - 201809011405.CHRTOUT_DOMAIN1
+                - 201809011410.CHRTOUT_DOMAIN1
+                - 201809011415.CHRTOUT_DOMAIN1
+                - 201809011420.CHRTOUT_DOMAIN1
+                - 201809011425.CHRTOUT_DOMAIN1
+                - 201809011430.CHRTOUT_DOMAIN1
+                - 201809011435.CHRTOUT_DOMAIN1
+                - 201809011440.CHRTOUT_DOMAIN1
+                - 201809011445.CHRTOUT_DOMAIN1
+                - 201809011450.CHRTOUT_DOMAIN1
+                - 201809011455.CHRTOUT_DOMAIN1
+                - 201809011500.CHRTOUT_DOMAIN1
+                - 201809011505.CHRTOUT_DOMAIN1
+                - 201809011510.CHRTOUT_DOMAIN1
+                - 201809011515.CHRTOUT_DOMAIN1
+                - 201809011520.CHRTOUT_DOMAIN1
+                - 201809011525.CHRTOUT_DOMAIN1
+                - 201809011530.CHRTOUT_DOMAIN1
+                - 201809011535.CHRTOUT_DOMAIN1
+                - 201809011540.CHRTOUT_DOMAIN1
+                - 201809011545.CHRTOUT_DOMAIN1
+                - 201809011550.CHRTOUT_DOMAIN1
+                - 201809011555.CHRTOUT_DOMAIN1
+                - 201809011600.CHRTOUT_DOMAIN1
+                - 201809011605.CHRTOUT_DOMAIN1
+                - 201809011610.CHRTOUT_DOMAIN1
+                - 201809011615.CHRTOUT_DOMAIN1
+                - 201809011620.CHRTOUT_DOMAIN1
+                - 201809011625.CHRTOUT_DOMAIN1
+                - 201809011630.CHRTOUT_DOMAIN1
+                - 201809011635.CHRTOUT_DOMAIN1
+                - 201809011640.CHRTOUT_DOMAIN1
+                - 201809011645.CHRTOUT_DOMAIN1
+                - 201809011650.CHRTOUT_DOMAIN1
+                - 201809011655.CHRTOUT_DOMAIN1
+                - 201809011700.CHRTOUT_DOMAIN1
+                - 201809011705.CHRTOUT_DOMAIN1
+                - 201809011710.CHRTOUT_DOMAIN1
+                - 201809011715.CHRTOUT_DOMAIN1
+                - 201809011720.CHRTOUT_DOMAIN1
+                - 201809011725.CHRTOUT_DOMAIN1
+                - 201809011730.CHRTOUT_DOMAIN1
+                - 201809011735.CHRTOUT_DOMAIN1
+                - 201809011740.CHRTOUT_DOMAIN1
+                - 201809011745.CHRTOUT_DOMAIN1
+                - 201809011750.CHRTOUT_DOMAIN1
+                - 201809011755.CHRTOUT_DOMAIN1
+                - 201809011800.CHRTOUT_DOMAIN1
+                - 201809011805.CHRTOUT_DOMAIN1
+                - 201809011810.CHRTOUT_DOMAIN1
+                - 201809011815.CHRTOUT_DOMAIN1
+                - 201809011820.CHRTOUT_DOMAIN1
+                - 201809011825.CHRTOUT_DOMAIN1
+                - 201809011830.CHRTOUT_DOMAIN1
+                - 201809011835.CHRTOUT_DOMAIN1
+                - 201809011840.CHRTOUT_DOMAIN1
+                - 201809011845.CHRTOUT_DOMAIN1
+                - 201809011850.CHRTOUT_DOMAIN1
+                - 201809011855.CHRTOUT_DOMAIN1
+                - 201809011900.CHRTOUT_DOMAIN1
+                - 201809011905.CHRTOUT_DOMAIN1
+                - 201809011910.CHRTOUT_DOMAIN1
+                - 201809011915.CHRTOUT_DOMAIN1
+                - 201809011920.CHRTOUT_DOMAIN1
+                - 201809011925.CHRTOUT_DOMAIN1
+                - 201809011930.CHRTOUT_DOMAIN1
+                - 201809011935.CHRTOUT_DOMAIN1
+                - 201809011940.CHRTOUT_DOMAIN1
+                - 201809011945.CHRTOUT_DOMAIN1
+                - 201809011950.CHRTOUT_DOMAIN1
+                - 201809011955.CHRTOUT_DOMAIN1
+                - 201809012000.CHRTOUT_DOMAIN1
+                - 201809012005.CHRTOUT_DOMAIN1
+                - 201809012010.CHRTOUT_DOMAIN1
+                - 201809012015.CHRTOUT_DOMAIN1
+                - 201809012020.CHRTOUT_DOMAIN1
+                - 201809012025.CHRTOUT_DOMAIN1
+                - 201809012030.CHRTOUT_DOMAIN1
+                - 201809012035.CHRTOUT_DOMAIN1
+                - 201809012040.CHRTOUT_DOMAIN1
+                - 201809012045.CHRTOUT_DOMAIN1
+                - 201809012050.CHRTOUT_DOMAIN1
+                - 201809012055.CHRTOUT_DOMAIN1
+                - 201809012100.CHRTOUT_DOMAIN1
+                - 201809012105.CHRTOUT_DOMAIN1
+                - 201809012110.CHRTOUT_DOMAIN1
+                - 201809012115.CHRTOUT_DOMAIN1
+                - 201809012120.CHRTOUT_DOMAIN1
+                - 201809012125.CHRTOUT_DOMAIN1
+                - 201809012130.CHRTOUT_DOMAIN1
+                - 201809012135.CHRTOUT_DOMAIN1
+                - 201809012140.CHRTOUT_DOMAIN1
+                - 201809012145.CHRTOUT_DOMAIN1
+                - 201809012150.CHRTOUT_DOMAIN1
+                - 201809012155.CHRTOUT_DOMAIN1
+                - 201809012200.CHRTOUT_DOMAIN1
+                - 201809012205.CHRTOUT_DOMAIN1
+                - 201809012210.CHRTOUT_DOMAIN1
+                - 201809012215.CHRTOUT_DOMAIN1
+                - 201809012220.CHRTOUT_DOMAIN1
+                - 201809012225.CHRTOUT_DOMAIN1
+                - 201809012230.CHRTOUT_DOMAIN1
+                - 201809012235.CHRTOUT_DOMAIN1
+                - 201809012240.CHRTOUT_DOMAIN1
+                - 201809012245.CHRTOUT_DOMAIN1
+                - 201809012250.CHRTOUT_DOMAIN1
+                - 201809012255.CHRTOUT_DOMAIN1
+                - 201809012300.CHRTOUT_DOMAIN1
+                - 201809012305.CHRTOUT_DOMAIN1
+                - 201809012310.CHRTOUT_DOMAIN1
+                - 201809012315.CHRTOUT_DOMAIN1
+                - 201809012320.CHRTOUT_DOMAIN1
+                - 201809012325.CHRTOUT_DOMAIN1
+                - 201809012330.CHRTOUT_DOMAIN1
+                - 201809012335.CHRTOUT_DOMAIN1
+                - 201809012340.CHRTOUT_DOMAIN1
+                - 201809012345.CHRTOUT_DOMAIN1
+                - 201809012350.CHRTOUT_DOMAIN1
+                - 201809012355.CHRTOUT_DOMAIN1
+                - 201809020000.CHRTOUT_DOMAIN1
