@@ -1,4 +1,6 @@
 import pytest
+import numpy as np
+import yaml
 from pathlib import Path
 import pandas as pd
 from troute.HYFeaturesNetwork import HYFeaturesNetwork
@@ -10,6 +12,16 @@ _workdir=Path(__file__).parent
 """
 Fixtures for setting up various components for testing
 """
+
+file_type = ['gpkg']   # list of geospatial file types e.g., ['json']
+
+
+def get_topology(topolgy_parameter):
+    yaml_file =  _workdir.joinpath("data/topology.yml")
+    with open(yaml_file, "r") as ymlfile:
+         topology = yaml.load(ymlfile, Loader=yaml.FullLoader)
+    return topology[topolgy_parameter]
+
 
 def supernetwork_parameters(type):
     if( type == 'gpkg'):
@@ -67,7 +79,51 @@ def network(request, waterbody_parameters, restart_parameters, forcing_parameter
     type = request.param
     return HYFeaturesNetwork(supernetwork_parameters(type), waterbody_parameters, restart_parameters, forcing_parameters, verbose=True, showtiming=False)
 
-@pytest.mark.parametrize("network",["gpkg", "json"], indirect=True)
+
+@pytest.mark.parametrize("network",file_type, indirect=True )
+def test_qlateral(network):
+    # check wb-2, wb-3, and wb-4
+    for nxid in [2,3,4]:
+        df_qlat = pd.read_csv(_workdir.joinpath('data/nex-%d_output.csv'%nxid),
+                              index_col=0, names=['date','flow'])
+        assert(np.all(network.qlateral.loc[nxid,:].values-df_qlat['flow'].values==0))
+    # wb-1 and wb-5 (headwaters) should have no inflow
+    assert(np.all(network.qlateral.loc[1,:]==0))
+    assert(np.all(network.qlateral.loc[5,:]==0))
+
+
+@pytest.mark.parametrize("network",file_type, indirect=True )
+def test_downstream_flowpath_dict(network):
+    assert(network.downstream_flowpath_dict == get_topology('downstream_flowpath_dict'))
+
+
+@pytest.mark.parametrize("network",file_type, indirect=True)
+def test_connections(network):
+    assert(network.connections == get_topology('connections'))
+
+
+@pytest.mark.parametrize("network",file_type, indirect=True)
+def test_reverse_network(network):
+    assert(network.reverse_network==get_topology('reverse_network'))
+
+
+@pytest.mark.parametrize("network",file_type, indirect=True)
+def test_reaches_by_tailwater(network):
+    assert(network.reaches_by_tailwater==get_topology('reaches_by_tailwater'))
+
+
+@pytest.mark.parametrize("network",file_type, indirect=True)
+def test_independent_networks(network):
+    assert(network.independent_networks==get_topology('independent_networks'))
+
+
+@pytest.mark.parametrize("network",file_type, indirect=True)
+def test_waterbody_connection(network):
+    # TO-DO: 11/01/2022- water-body is not implemented in HYFeature network yet
+    pass
+
+
+@pytest.mark.parametrize("network",file_type, indirect=True)
 def test_init(network):
     #This isn't really nessicary since init is done by the fixture
     #errors in init will be caught and shown in the test
@@ -75,8 +131,9 @@ def test_init(network):
     #is working, instead of infering it from non failure of the fixture creation
     pass
 
+
 #@pytest.skip #compute_nhd_routing_v02 has some additonal args that need to be considered
-@pytest.mark.parametrize("network",["gpkg", "json"], indirect=True )
+@pytest.mark.parametrize("network",file_type, indirect=True )
 def test_routable(network, waterbody_parameters):
         #This is really more of an integration test
         #but it is here to ensure that the data structure works as intended

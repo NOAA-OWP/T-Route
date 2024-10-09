@@ -1,0 +1,45 @@
+---
+# HYFeatureNetwork topology data for an unit test basin
+# This data is generated independently from t-route network routines
+
+
+# Desription: ??
+# data structure: dictionary, key=outlet id, value=list of reaches in each branch
+reaches_by_tailwater:
+    4: [[1,2,3], [5], [4]]
+
+
+# Desription: ??
+# data structure: dictionary, key=outlet id, value=dictionary {upstream id:list of upstream id for key reach}
+independent_networks:
+    4:
+        1: []
+        2: [1]
+        3: [2]
+        4: [3,5]
+        5: []
+
+# Desription: Downstream element ID
+# data structure: dictionary, key=wb-id, value=list of downstream id
+connections:
+    1: [2]
+    2: [3]
+    3: [4]
+    4: []
+    5: [4]
+
+# Desription: upstream element ID
+# data structure: dictionary, key=wb-id, value=list of upstream id
+reverse_network:
+    1: []
+    2: [1]
+    3: [2]
+    4: [3,5]
+    5: []
+
+# Desription: ??
+# data structure:
+downstream_flowpath_dict:
+    3: 2
+    2: 1
+    4: 5
