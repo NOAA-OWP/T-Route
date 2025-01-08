@@ -391,9 +391,13 @@ class DataAssimilationParameters(BaseModel, extra='ignore'):
     NOTE: Only relevant if using a WRF-Hydro lastobs restart file.
     """
     wrf_lastobs_type: str = "obs-based"
-    
-    streamflow_da: StreamflowDA = None
-    reservoir_da: Optional[ReservoirDA] = None
+    streamflow_da: StreamflowDA = Field(
+        default_factory=dict
+    )
+    # NOTE: this appears to be optional. See nwm_routing/input.py ~:439
+    reservoir_da: Optional[ReservoirDA] = Field(
+        default_factory=dict
+    )
 
     qc_threshold: float = Field(1, ge=0, le=1)
     """

@@ -59,6 +59,13 @@ def _input_handler_v04(args):
     parity_parameters = output_parameters.get('wrf_hydro_parity_check')
     data_assimilation_parameters = compute_parameters.get('data_assimilation_parameters')
     
+    # read mask output info and add it to output_parameters
+    if output_parameters.get('stream_output'):
+        stream_output_mask = output_parameters.get('stream_output',{}).get('mask_output',{})
+        if stream_output_mask:
+            mask_list = nhd_io.stream_output_mask_reader(stream_output_mask)
+            output_parameters['stream_output']['mask'] = mask_list
+    
     # configure python logger
     log_level_set(log_parameters)
 

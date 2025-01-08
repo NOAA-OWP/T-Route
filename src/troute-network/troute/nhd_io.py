@@ -2055,7 +2055,7 @@ def write_waterbody_netcdf(
 
 def write_flowveldepth_csv_pkl(stream_output_directory, file_name,
                               flow, velocity, depth, nudge_df, timestamps,
-                              t0):
+                              t0, poi_crosswalk):
     
     formatted_times = [str(timedelta(seconds=t)) for t in timestamps]
     
@@ -2088,7 +2088,12 @@ def write_flowveldepth_csv_pkl(stream_output_directory, file_name,
 
 def write_flowveldepth_netcdf(stream_output_directory, file_name,
                               flow, velocity, depth, nudge_df, timestamps,
-                              t0):
+                              t0, poi_crosswalk):
+   
+    # Find max lenght of string variables:
+    max_Type_str_len = max(len(str(x)) for x in flow.index.get_level_values('Type'))
+    max_poi_str_len = max(len(str(x)) for x in poi_crosswalk.poi_id)
+    
     # Open netCDF4 Dataset in write mode
     with netCDF4.Dataset(
         filename=f"{stream_output_directory}/{file_name}",
@@ -2099,8 +2104,7 @@ def write_flowveldepth_netcdf(stream_output_directory, file_name,
         # ============ DIMENSIONS ===================
         _ = ncfile.createDimension('feature_id', len(flow))
         _ = ncfile.createDimension('time', len(timestamps))
-        max_str_len = max(len(str(x)) for x in flow.index.get_level_values('Type'))
-        _ = ncfile.createDimension('type_strlen', max_str_len)
+        _ = ncfile.createDimension('type_strlen', max_Type_str_len)
         #_ = ncfile.createDimension('gage', gage)
         #_ = ncfile.createDimension('nudge_timestep', nudge_timesteps)  # Add dimension for nudge time steps
         
@@ -2151,10 +2155,10 @@ def write_flowveldepth_netcdf(stream_output_directory, file_name,
         # =========== type VARIABLE ===============
         TYPE = ncfile.createVariable(
             varname="type",
-            datatype=f'S{max_str_len}',
+            datatype=f'S{max_Type_str_len}',
             dimensions=("feature_id",),
         )
-        TYPE[:] = np.array(flow.index.get_level_values('Type').astype(str).tolist(), dtype=f'S{max_str_len}')
+        TYPE[:] = np.array(flow.index.get_level_values('Type').astype(str).tolist(), dtype=f'S{max_Type_str_len}')
         ncfile['type'].setncatts(
             {
                 'long_name': 'Type',
@@ -2226,6 +2230,19 @@ def write_flowveldepth_netcdf(stream_output_directory, file_name,
             }
         )
         
+        # ============= POI VARIABLE ===============
+        TYPE = ncfile.createVariable(
+            varname="POI",
+            datatype=f'S{max_poi_str_len}',
+            dimensions=("feature_id",),
+        )
+        TYPE[:] = np.array(poi_crosswalk.poi_id.astype(str).tolist(), dtype=f'S{max_poi_str_len}')
+        ncfile['type'].setncatts(
+            {
+                'long_name': 'POI ID',
+            }
+        )
+        
         # =========== GLOBAL ATTRIBUTES ===============
         ncfile.setncatts(
             {
@@ -2259,7 +2276,7 @@ def mask_find_seg(mask_list, nexus_dict, poi_crosswalk):
             
             for key, val in nexus_dict.items():
                 nex_key = int(key.split('-')[-1])
-                nex_id[nex_key] = [int(v.split('-')[-1]) for v in val]
+                nex_id[nex_key] = [int(float(v.split('-')[-1])) for v in val]
         else:
             for key in mask_list['nex']:
                 item = f'nex-{key}'
@@ -2280,7 +2297,7 @@ def updated_flowveldepth(flowveldepth, nex_id, seg_id, mask_list):
         masked = (flowveldepth.index.get_level_values('featureID').isin(ids)) & (flowveldepth.index.get_level_values('Type') == 'wb')
         return masked
     
-    flowveldepth_seg = flowveldepth[create_mask(seg_id)] if seg_id else pd.DataFrame()
+    flowveldepth_seg = flowveldepth[create_mask(seg_id)] if seg_id else pd.DataFrame(columns=flowveldepth.reset_index().columns).set_index(['featureID','Type'])
 
     if nex_id:    
         nex_df = pd.DataFrame([(nex, wb) for nex, wbs in nex_id.items() for wb in wbs], columns=['nex', 'featureID'])
@@ -2373,7 +2390,7 @@ def write_flowveldepth(
     mask_list = stream_output_mask_reader(stream_output_mask)
     nex_id, seg_id = mask_find_seg(mask_list, nexus_dict, poi_crosswalk)
     flowveldepth = updated_flowveldepth(flowveldepth, nex_id, seg_id, mask_list)
-
+    
     # timesteps, variable = zip(*flowveldepth.columns.tolist())
     # timesteps = list(timesteps)
     n_timesteps = flowveldepth.shape[1]//3
@@ -2384,6 +2401,18 @@ def write_flowveldepth(
     flow = flowveldepth.iloc[:,0::3].iloc[:,ind]
     velocity = flowveldepth.iloc[:,1::3].iloc[:,ind]
     depth = flowveldepth.iloc[:,2::3].iloc[:,ind]
+
+    # Create POI-nexus point crosswalk dataframe (if necessary)
+    if not poi_crosswalk.empty:
+        idx = flowveldepth.reset_index()[['featureID','Type']]
+        poi_crosswalk_masked = poi_crosswalk.copy()
+        poi_crosswalk_masked[['Type', 'featureID']] = poi_crosswalk_masked['id'].str.split('-', expand=True)
+        poi_crosswalk_masked['Type'] = 'nex' # Types can be 'nex', 'tnx', etc. This just sets them all to generic 'nex'.
+        poi_crosswalk_masked['featureID'] = poi_crosswalk_masked.featureID.astype(int)
+        poi_crosswalk_masked = idx.set_index(['featureID','Type']).join(poi_crosswalk_masked[['featureID','Type','poi_id']].set_index(['featureID','Type']))
+    else:
+        poi_crosswalk_masked = poi_crosswalk.copy()
+        poi_crosswalk_masked['poi_id'] = [" " for _ in range(len(flowveldepth))]
 
     # Check if the first column of nudge is all zeros
     if np.all(nudge[:, 0] == 0):
@@ -2410,7 +2439,8 @@ def write_flowveldepth(
                     velocity.iloc[:,0:ts_per_file],
                     depth.iloc[:,0:ts_per_file],
                     nudge_df.iloc[:,0:ts_per_file],
-                    timestamps_sec[0:ts_per_file],t0)
+                    timestamps_sec[0:ts_per_file],t0,
+                    poi_crosswalk_masked)
             if stream_output_type == '.nc':
                 if cpu_pool > 1 & num_files > 1:
                     jobs.append(delayed(write_flowveldepth_netcdf)(*args))
@@ -2438,7 +2468,8 @@ def write_flowveldepth(
                 depth,
                 nudge_df,
                 timestamps_sec,
-                t0)
+                t0,
+                poi_crosswalk_masked)
         if stream_output_type == '.nc':
             if cpu_pool > 1:
                 jobs.append(delayed(write_flowveldepth_netcdf)(*args))

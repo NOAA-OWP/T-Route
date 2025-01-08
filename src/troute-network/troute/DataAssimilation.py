@@ -268,7 +268,7 @@ class NudgingDA(AbstractDA):
         run_parameters = self._run_parameters
 
         # update usgs_df if it is not empty
-        streamflow_da_parameters = data_assimilation_parameters.get('streamflow_da', None)
+        streamflow_da_parameters = data_assimilation_parameters.get('streamflow_da', {})
         
         if streamflow_da_parameters.get('streamflow_nudging', False):
             self._usgs_df = _create_usgs_df(data_assimilation_parameters, streamflow_da_parameters, run_parameters, network, da_run)
@@ -2069,13 +2069,29 @@ def _create_GL_dfs(GL_crosswalk_df, data_assimilation_parameters, run_parameters
                 cpu_pool=run_parameters.get("cpu_pool", 1),
             )
         )
+
         usgs_GL_df = pd.melt(usgs_GL_df, 
                              var_name='Datetime',
                              value_name='Discharge',
                              ignore_index=False).dropna().reset_index()
         
+        if usgs_GL_df.empty:
+            #TODO: These dataframes with dummy values are to make the indexing work
+            # in mc_reach.pyx. This is a temporary solution, it might be better to
+            # address this in mc_reach.pyx or at the end of this function when the 
+            # dataframes are finalized. -shorvath, 09/25/2024
+            usgs_GL_df = pd.DataFrame(
+                {'link': [4800002, 4800004],
+                'Datetime': ['1970-01-01_00:00:00', '1970-01-01_00:00:00'],
+                'Discharge': [-9999.0, -9999.0]}
+            )
+        
     else:
-        usgs_GL_df = pd.DataFrame()
+        usgs_GL_df = pd.DataFrame(
+            {'link': [4800002, 4800004],
+             'Datetime': ['1970-01-01_00:00:00', '1970-01-01_00:00:00'],
+             'Discharge': [-9999.0, -9999.0]}
+        )
 
     # Canadian gages:
     canadian_timeslices_folder = data_assimilation_parameters.get("canada_timeslices_folder", None)
@@ -2097,15 +2113,30 @@ def _create_GL_dfs(GL_crosswalk_df, data_assimilation_parameters, run_parameters
                                  value_name='Discharge',
                                  ignore_index=False).dropna().reset_index()
         
+        if canadian_GL_df.empty:
+            canadian_GL_df = pd.DataFrame(
+                {'link': [4800006],
+                'Datetime': ['1970-01-01_00:00:00'],
+                'Discharge': [-9999.0]}
+            )
+            
     else:
-        canadian_GL_df = pd.DataFrame()
+        canadian_GL_df = pd.DataFrame(
+            {'link': [4800006],
+            'Datetime': ['1970-01-01_00:00:00'],
+            'Discharge': [-9999.0]}
+        )
     
     # Lake Ontario data:
     if 'LakeOntario_outflow' in da_run:
         lake_ontario_df = _create_LakeOntario_df(run_parameters, t0, da_run)
     else:
-        lake_ontario_df = pd.DataFrame()
-
+        lake_ontario_df = pd.DataFrame(
+            {'link': [4800007],
+             'Datetime': ['1970-01-01_00:00:00'],
+             'Discharge': [-9999.0]}
+        )
+    
     great_lakes_df = pd.concat(
         [usgs_GL_df, canadian_GL_df, lake_ontario_df]
         ).rename(columns={'link': 'lake_id'}).sort_values(by=['lake_id','Datetime'])

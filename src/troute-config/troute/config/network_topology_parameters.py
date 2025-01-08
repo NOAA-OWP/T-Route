@@ -115,7 +115,7 @@ class SupernetworkParameters(BaseModel):
                 default_columns = {
                     'key'       : 'id',
                     'downstream': 'toid',
-                    'dx'        : 'length_m',
+                    'dx'        : 'Length_m',
                     'n'         : 'n',
                     'ncc'       : 'nCC',
                     's0'        : 'So',
