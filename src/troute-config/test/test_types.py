@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ValidationError
-
 from troute.config._utils import use_strict
 from troute.config.types import DirectoryPath, FilePath
 

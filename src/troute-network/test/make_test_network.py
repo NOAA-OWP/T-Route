@@ -2,6 +2,7 @@ import geopandas as gpd
 import pandas as pd
 from pathlib import Path
 import sys
+import warnings
 
 def process_branch(edges, start, depth):
     if(depth == 0): return [] #stop condition
@@ -59,6 +60,11 @@ if __name__ == "__main__":
         by default, it picks the first terminal nexus in the list and walks upstream of that, which
         is why the test network only has 5 links.
     """
+    warnings.warn(
+        "This script is deprecated. Please use updated network creation methods.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     file_path = Path(sys.argv[1])
     #used to make simple test network
     make_network_from_geopkg(file_path, int(sys.argv[2]), segment=None)

@@ -1,0 +1,28 @@
+[project]
+name = "troute_project"
+authors = [
+    {name = "DongHa Kim", email = "dongha.kim@noaa.gov"},
+    {name = "Sean Horvath", email = "sean.horvath@noaa.gov"},
+    {name = "Amin Torabi", email = "amin.torabi@noaa.gov"},
+    {name = "Zach Jurgen", email = "jurgen.zach@noaa.gov"},
+    {name = "Austin Raney", email = "austin.raney@noaa.gov"},
+]
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[project.optional-dependencies]
+test = [
+    "pytest==8.3.2",
+    "bmipy==2.0.0",
+]
+
+jupyter = [
+    "contextily==1.6.0",
+    "matplotlib>=3.7.0,<3.8.0",  # More stable version range
+    "ipykernel>=6.29.0,<7.0.0",
+    "jupyterlab>=3.6.7,<4.0.0",
+    "xarray>=2024.1.1",
+    "matplotlib-inline>=0.1.6"  # Add explicit version
+]
