@@ -1,0 +1,27 @@
+services:
+  troute:
+    build: 
+      context: ..
+      dockerfile: docker/Dockerfile.compose
+    ports:
+      - "${PORT}:${PORT}"
+    volumes:
+      - type: bind
+        source: ${OUTPUT_VOLUME_SOURCE}
+        target: ${OUTPUT_VOLUME_TARGET}
+      - type: bind
+        source: ${DATA_VOLUME_SOURCE}
+        target: ${DATA_VOLUME_TARGET}
+      - type: bind
+        source: ${CORE_VOLUME_SOURCE}
+        target: ${CORE_VOLUME_TARGET}
+      - type: bind
+        source: ${TEST_SOURCE}
+        target: ${TEST_TARGET}
+    command: sh -c ". /t-route/.venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"
+    healthcheck:
+      test: curl --fail -I http://localhost:${PORT}/health || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

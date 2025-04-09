@@ -89,8 +89,18 @@ def read_geopkg(file_path, compute_parameters, waterbody_parameters, cpu_pool):
     flowpath_attributes_df = table_dict.get('flowpath_attributes', pd.DataFrame())
 
     # Check if 'link' column exists and rename it to 'id'
-    if 'link' in flowpath_attributes_df.columns:
-        flowpath_attributes_df.rename(columns={'link': 'id'}, inplace=True) 
+    if "link" in flowpath_attributes_df.columns:
+        # v2.2 Hydrofabric files have both a link and an id in flowpath_attributes
+        # Dropping columns that are duplicated in the two dataframes
+        if 'id' in flowpath_attributes_df.columns:
+            flowpath_attributes_df.drop(columns=['id'], inplace=True)
+        if 'toid' in flowpath_attributes_df.columns:
+            flowpath_attributes_df.drop(columns=['toid'], inplace=True)
+        if 'vpuid' in flowpath_attributes_df.columns:
+            flowpath_attributes_df.drop(columns=['vpuid'], inplace=True)
+        if 'geometry' in flowpath_attributes_df.columns:
+            flowpath_attributes_df.drop(columns=['geometry'], inplace=True)
+        flowpath_attributes_df.rename(columns={"link": "id"}, inplace=True)
      
     # Merge flowpaths and flowpath_attributes 
     flowpaths = pd.merge(
