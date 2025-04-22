@@ -45,7 +45,7 @@ class NHDNetwork(AbstractNetwork):
         self.output_parameters = output_parameters
         self.verbose = verbose
         self.showtiming = showtiming
-        self._poi_nex_dict = None
+        self._poi_nex_df = pd.DataFrame()
         self._nexus_dict = None
         if self.verbose:
             print("creating supernetwork connections set")

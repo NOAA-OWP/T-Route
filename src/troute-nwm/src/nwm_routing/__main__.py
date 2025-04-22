@@ -255,7 +255,6 @@ def main_v04(argv):
         subnetwork_list = run_results[1]
         run_results = run_results[0]
 
-        
         route_end_time = time.time()
         task_times['route_time'] += route_end_time - route_start_time
 
@@ -293,11 +292,6 @@ def main_v04(argv):
             forcing_end_time = time.time()
             task_times['forcing_time'] += forcing_end_time - route_end_time
 
-        if network.poi_nex_dict:
-            poi_crosswalk = network.poi_nex_dict
-        else:
-            poi_crosswalk = dict()
-
         output_start_time = time.time()  
         
         #TODO Update this to work with either network type...
@@ -320,7 +314,7 @@ def main_v04(argv):
             network.link_gage_df,
             network.link_lake_crosswalk,
             network.nexus_dict,
-            poi_crosswalk, 
+            network.poi_nex_df, 
             logFileName            
         )
         

@@ -35,7 +35,7 @@ class AbstractNetwork(ABC):
                 "supernetwork_parameters", "waterbody_parameters","data_assimilation_parameters",
                 "restart_parameters", "compute_parameters", "forcing_parameters",
                 "hybrid_parameters", "preprocessing_parameters", "output_parameters",
-                "verbose", "showtiming", "break_points", "_routing", "_gl_climatology_df", "_nexus_dict", "_poi_nex_dict"]
+                "verbose", "showtiming", "break_points", "_routing", "_gl_climatology_df", "_nexus_dict", "_poi_nex_df"]
 
     
     def __init__(self, from_files=True, value_dict={}):
@@ -379,8 +379,8 @@ class AbstractNetwork(ABC):
         return self._nexus_dict
     
     @property
-    def poi_nex_dict(self):
-        return self._poi_nex_dict
+    def poi_nex_df(self):
+        return self._poi_nex_df
 
     @property
     def terminal_codes(self):
