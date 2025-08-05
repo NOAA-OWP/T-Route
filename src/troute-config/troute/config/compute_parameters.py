@@ -1,11 +1,10 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, DirectoryPath, FilePath, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime
 
-from typing import Optional, List, Union
+from typing import Any, Dict, Optional, List, Union
 from typing_extensions import Literal
 
-from .types import FilePath, DirectoryPath
-from ._validators import coerce_datetime, coerce_none_to_default
+from ._validators import coerce_datetime
 
 
 # ---------------------------- Compute Parameters ---------------------------- #
@@ -148,9 +147,7 @@ class RestartParameters(BaseModel):
     """
     
 
-    _coerce_datetime = validator("start_datetime", pre=True, allow_reuse=True)(
-        coerce_datetime
-    )
+    _coerce_datetime = field_validator("start_datetime", mode="before")(coerce_datetime)
 
 
 # TODO: determine how to handle context specific required fields
@@ -351,7 +348,8 @@ class ReservoirDA(BaseModel):
     """
 
 
-class DataAssimilationParameters(BaseModel, extra='ignore'):
+class DataAssimilationParameters(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     """
     Parameters controlling data assimilation.
     """
@@ -402,9 +400,14 @@ class DataAssimilationParameters(BaseModel, extra='ignore'):
     used for assimilation, even those markesd as very poor quality.
     """
 
-    _coerce_none_to_default = validator(
-        "timeslice_lookback_hours", "qc_threshold", pre=True, allow_reuse=True
-    )(coerce_none_to_default)
+    @model_validator(mode='before')
+    @classmethod
+    def coerce_none_to_default(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if values.get("qc_threshold") is None:
+            values["qc_threshold"] = 1
+        if values.get("timeslice_lookback_hours") is None:
+            values["timeslice_lookback_hours"] = 24 
+        return values
 
 
 class ForcingParameters(BaseModel):
@@ -470,6 +473,6 @@ class ForcingParameters(BaseModel):
     """
 
 
-ComputeParameters.update_forward_refs()
-QLateralForcingSet.update_forward_refs()
-ReservoirRfcParameters.update_forward_refs()
+ComputeParameters.model_rebuild()
+QLateralForcingSet.model_rebuild()
+ReservoirRfcParameters.model_rebuild()

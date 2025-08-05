@@ -1,0 +1,107 @@
+[project]
+description = "T-Route replace and route capabilities for water.noaa.gov"
+version = "2025.6.0"
+readme = "README.md"
+requires-python = ">=3.9"
+name = "troute_rnr"
+authors = [{ name = "Tadd Bindas", email = "Tadd.Bindas@rtx.com" }]
+dependencies = [
+    "pydantic==2.11.4",
+    "pydantic-xml==2.16.0",
+    "httpx==0.27.0",
+    "geopandas==1.0.1",
+    "numpy==1.26.4",
+    "xarray==2024.3.0",
+    "matplotlib==3.10.0",
+    "pandas==2.2.0",
+    "pika==1.3.2",
+    "xmltodict==0.12.0",
+    "lxml==5.3.0",
+    "pytest==8.3.2",
+    "pyyaml==6.0.2",
+    "netcdf4==1.7.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/troute_rnr"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+
+[tool.black]
+line-length = 110
+skip-string-normalization = true
+preview = true
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 110
+lint.select = [
+  "F",      # Errors detected by Pyflakes
+  "E",      # Error detected by Pycodestyle
+  "W",      # Warning detected by Pycodestyle
+  "I",      # isort
+  "D",      # pydocstyle
+  "B",      # flake8-bugbear
+  "TID",    # flake8-tidy-imports
+  "C4",     # flake8-comprehensions
+  "BLE",    # flake8-blind-except
+  "UP",     # pyupgrade
+  "RUF100", # Report unused noqa directives
+]
+exclude = ["./tests*"]
+lint.ignore = [
+  # line too long -> we accept long comment lines; black gets rid of long code lines
+  "E501",
+  # Do not assign a lambda expression, use a def -> lambda expression assignments are convenient
+  "E731",
+  # allow I, O, l as variable names -> I is the identity matrix
+  "E741",
+  # Missing docstring in public package
+  "D104",
+  # Missing docstring in public module
+  "D100",
+  # Missing docstring in __init__
+  "D107",
+  # Errors from function calls in argument defaults. These are fine when the result is immutable.
+  "B008",
+  # __magic__ methods are are often self-explanatory, allow missing docstrings
+  "D105",
+  # first line should end with a period [Bug: doesn't work with single-line docstrings]
+  "D400",
+  # First line should be in imperative mood; try rephrasing
+  "D401",
+  ## Disable one in each pair of mutually incompatible rules
+  # We don't want a blank line before a class docstring
+  "D203",
+  # We want docstrings to start immediately after the opening triple quote
+  "D213",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"docs/*" = ["I"]
+"tests/*" = ["D"]
+"*/__init__.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+strict_optional = true
+ignore_missing_imports = true
+disallow_any_unimported = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+warn_unused_ignores = true

@@ -63,7 +63,7 @@ compute_parameters:
         qlat_file_pattern_filter    : "*NEXOUT.csv"
         nexus_input_folder          : channel_forcing/ 
         nexus_file_pattern_filter   : "*NEXOUT.csv" #OR "*NEXOUT.parquet" OR "nex-*"
-        binary_nexus_file_folder    : binary_files # this is required if nexus_file_pattern_filter="nex-*"
+        # binary_nexus_file_folder    : binary_files # this is required if nexus_file_pattern_filter="nex-*"
         coastal_boundary_input_file : channel_forcing/schout_1.nc  
         nts                         : 48 #288 for 1day
         max_loop_size               : 2 # [hr]  

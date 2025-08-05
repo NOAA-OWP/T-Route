@@ -1,9 +1,7 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, DirectoryPath, FilePath, Field, field_validator
 
 from typing import Optional, List, Union, Dict, Any
 from typing_extensions import Literal
-
-from .types import FilePath, DirectoryPath
 
 
 class NetworkTopologyParameters(BaseModel):
@@ -108,7 +106,7 @@ class SupernetworkParameters(BaseModel):
     driver_string: Union[str, Literal["NetCDF"]] = "NetCDF"
     layer_string: int = 0
     
-    @validator("columns", always=True)
+    @field_validator("columns", mode='before')
     def get_columns(cls, columns: dict, values: Dict[str, Any]) -> dict:
         if columns is None:
             if values['network_type']=="HYFeaturesNetwork":
@@ -182,7 +180,7 @@ class Columns(BaseModel):
     """
     channel bottom width
     """
-    waterbody: Optional[str] 
+    waterbody: Optional[str] = None 
     """
     waterbody identifier
     """
@@ -194,7 +192,7 @@ class Columns(BaseModel):
     """
     compound channel top width
     """
-    alt: Optional[str] 
+    alt: Optional[str] = None 
     """
     channel bottom altitude
     """
@@ -210,11 +208,11 @@ class Columns(BaseModel):
     """
     channel sideslope
     """
-    gages: Optional[str]
+    gages: Optional[str] = None
     """
     gage ID
     """
-    mainstem: Optional[str]
+    mainstem: Optional[str] = None
     """
     mainstem ID
     """
@@ -249,9 +247,9 @@ class LevelPool(BaseModel):
     """
 
 
-NetworkTopologyParameters.update_forward_refs()
-PreprocessingParameters.update_forward_refs()
-SupernetworkParameters.update_forward_refs()
-WaterbodyParameters.update_forward_refs()
-LevelPool.update_forward_refs()
+NetworkTopologyParameters.model_rebuild()
+PreprocessingParameters.model_rebuild()
+SupernetworkParameters.model_rebuild()
+WaterbodyParameters.model_rebuild()
+LevelPool.model_rebuild()
 
