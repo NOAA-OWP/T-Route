@@ -7,7 +7,6 @@ import troute.nhd_io as nhd_io
 from build_tests import parity_check
 import logging
 
-
 LOG = logging.getLogger('')
 
 def _reindex_lake_to_link_id(target_df, crosswalk):
@@ -190,7 +189,7 @@ def nwm_output_generator(
     wbdyo = output_parameters.get("lakeout_output", None)
     stream_output = output_parameters.get("stream_output", None)
     lastobso = output_parameters.get("lastobs_output", None)
-
+        
     if csv_output:
         csv_output_folder = output_parameters["csv_output"].get(
             "csv_output_folder", None
@@ -305,23 +304,18 @@ def nwm_output_generator(
             nexus_dict= nexus_dict,
             )
 
-        if (not logFileName == 'NONE'):
-            with open(logFileName, 'a') as preRunLog:
-                preRunLog.write("\n") 
-                preRunLog.write("-----\n") 
-                preRunLog.write("Output of flow velocity depth files into folder: "+str(Path(stream_output_directory))+"\n") 
-                preRunLog.write("-----\n") 
-                nTimeBins = int( len(flowveldepth.columns)/3)
-                fCalc = int(dt/60)
-                preRunLog.write("Internal computation of FVD data every "+str(stream_output_internal_frequency)+" minutes\n")
-                preRunLog.write("Output of FVD data every "+str(fCalc)+" minutes\n")
-                preRunLog.write("Writing "+str(nTimeBins)+" time bins for "+str(len(flowveldepth.index))+" segments per FVD output file\n")               
-            preRunLog.close()      
+        nTimeBins = int( len(flowveldepth.columns)/3)
+        fCalc = int(dt/60)
+        LOG.info("Output of flow velocity depth files into folder: "+str(Path(stream_output_directory).resolve()))     
+        LOG.info("Internal computation of FVD data every "+str(stream_output_internal_frequency)+" minutes")     
+        LOG.info("Output of FVD data every "+str(fCalc)+" minutes")     
+        LOG.info("Writing "+str(nTimeBins)+" time bins for "+str(len(flowveldepth.index))+" segments per FVD output file")     
 
     if test:
         flowveldepth.to_pickle(Path(test))
     
     if wbdyo and not waterbodies_df.empty:
+        LOG.debug("Writing waterbody output.")
         
         time_index, tmp_variable = map(list,zip(*i_df.columns.tolist()))
         if not duplicate_ids_df.empty:
@@ -330,7 +324,8 @@ def nwm_output_generator(
         else:
             output_waterbodies_df = waterbodies_df
             output_waterbody_types_df = waterbody_types_df
-        LOG.info("- writing t-route flow results to LAKEOUT files")
+        num_files = i_df.shape[1]
+        LOG.info("Output of "+str(num_files)+" waterbody files to be written to folder: "+str(Path(wbdyo).resolve()))     
         start = time.time()
         for i in range(i_df.shape[1]):              
             nhd_io.write_waterbody_netcdf(
@@ -345,16 +340,10 @@ def nwm_output_generator(
                 nts,
                 time_index[i],
             )
-        
-        if (not logFileName == 'NONE'):
-            with open(logFileName, 'a') as preRunLog:
-                preRunLog.write("\n") 
-                preRunLog.write("-----\n") 
-                preRunLog.write("Output of waterbody files into folder: "+str(wbdyo)+"\n") 
-                preRunLog.write("-----\n") 
-            preRunLog.close()  
-        
+        LOG.info("Output of "+str(num_files)+" waterbody files written to folder: "+str(Path(wbdyo).resolve()))     
         LOG.debug("writing LAKEOUT files took a total time of %s seconds." % (time.time() - start))
+    elif wbdyo:
+        LOG.warning("Requested LAKEOUT files not written. waterbodies_df is empty. Verify gage basin has a waterbody.")
     
     if rsrto:
 
@@ -389,13 +378,7 @@ def nwm_output_generator(
                     ),
                 )
 
-                if (not logFileName == 'NONE'):
-                    with open(logFileName, 'a') as preRunLog:
-                        preRunLog.write("\n") 
-                        preRunLog.write("-----\n") 
-                        preRunLog.write("Output of wrf hydro restart files into folder: "+str(Path(wrf_hydro_restart_dir))+"\n") 
-                        preRunLog.write("-----\n") 
-                    preRunLog.close()  
+                LOG.info("Output of wrf hydro restart files into folder: "+str(Path(wrf_hydro_restart_dir).resolve()))
 
             else:
                 LOG.critical('Did not find any restart files in wrf_hydro_channel_restart_source_directory. Aborting restart write sequence.')
@@ -427,13 +410,7 @@ def nwm_output_generator(
                 cpu_pool,
             )
         
-            if (not logFileName == 'NONE'):
-                with open(logFileName, 'a') as preRunLog:
-                    preRunLog.write("\n") 
-                    preRunLog.write("-----\n") 
-                    preRunLog.write("Output of FVD files into folder: "+str(chrtout_read_folder)+"\n") 
-                    preRunLog.write("-----\n") 
-                preRunLog.close()  
+            LOG.info("Output of FVD files into folder: "+str(Path(chrtout_read_folder).resolve()))
 
         LOG.debug("writing CHRTOUT files took a total time of %s seconds." % (time.time() - start))
 
@@ -541,14 +518,7 @@ def nwm_output_generator(
             # rather than just printing at gages. 
         )
 
-        if (not logFileName == 'NONE'):
-            with open(logFileName, 'a') as preRunLog:
-                preRunLog.write("\n") 
-                preRunLog.write("-----\n") 
-                preRunLog.write("Output of results at gage locations into folder: "+str(Path(chano['chanobs_output_directory'])+"\n"))
-                preRunLog.write("-----\n") 
-            preRunLog.close()  
-
+        LOG.info("Output of results at gage locations into folder: "+str(Path(chano['chanobs_output_directory']).resolve()))
         LOG.debug("writing flow data to CHANOBS took %s seconds." % (time.time() - start))       
 
     if lastobso:      
@@ -578,15 +548,10 @@ def nwm_output_generator(
                 lastobs_output_folder,
             )
 
-            if (not logFileName == 'NONE'):
-                with open(logFileName, 'a') as preRunLog:
-                    preRunLog.write("\n") 
-                    preRunLog.write("-----\n") 
-                    preRunLog.write("Output of lastobs data into folder: "+str(lastobs_output_folder)+"\n") 
-                    preRunLog.write("-----\n") 
-                preRunLog.close()  
+            LOG.info("Output of lastobs data into folder: "+str(Path(lastobs_output_folder).resolve()))
 
             LOG.debug("writing lastobs files took %s seconds." % (time.time() - start))
+
 
     # if 'flowveldepth' in locals():
     #    LOG.debug(flowveldepth)
@@ -596,10 +561,8 @@ def nwm_output_generator(
     ################### Parity Check
 
     if parity_set:
-
-        LOG.info(
-            "conducting parity check, comparing WRF Hydro results against t-route results"
-        )
+        
+        LOG.info("conducting parity check, comparing WRF Hydro results against t-route results")
     
         start_time = time.time()
         

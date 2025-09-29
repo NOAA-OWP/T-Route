@@ -244,6 +244,8 @@ class troute_model():
                          self._network.dataframe,
                          self._network.q0,
                          self._network._qlateral,
+                         self._network._eloss,
+                         self._network.forcing_parameters.get("ssout"),
                          self._data_assimilation.usgs_df,
                          self._data_assimilation.lastobs_df,
                          self._data_assimilation.reservoir_usgs_df,

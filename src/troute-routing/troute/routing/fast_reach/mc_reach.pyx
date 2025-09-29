@@ -172,6 +172,8 @@ cpdef object compute_network_structured(
     const float[:,:] data_values,
     const float[:,:] initial_conditions,
     const float[:,:] qlat_values,
+    const float[:,:] eloss_values,
+    float ssout,
     list lake_numbers_col,
     const double[:,:] wbody_cols,
     dict data_assimilation_parameters,
@@ -255,6 +257,7 @@ cpdef object compute_network_structured(
     cdef np.ndarray[float, ndim=2] data_array = np.asarray(data_values)
     cdef np.ndarray[float, ndim=2] init_array = np.asarray(initial_conditions)
     cdef np.ndarray[float, ndim=2] qlat_array = np.asarray(qlat_values)
+    cdef np.ndarray[float, ndim=2] eloss_array = np.asarray(eloss_values)
     cdef np.ndarray[double, ndim=2] wbody_parameters = np.asarray(wbody_cols)
     ###### Declare/type variables #####
     # Source columns
@@ -742,12 +745,19 @@ cpdef object compute_network_structured(
                 #Copy the output out
                 for _i in range(r.reach.mc_reach.num_segments):
                     segment = get_mc_segment(r, _i)
-                    flowveldepth[segment.id, timestep, 0] = out_buf[_i, 0]
+
+                    # Setting flow based on the output of MC - SSOUT - ELOSS
+                    flowveldepth[segment.id, timestep, 0] = out_buf[_i, 0] - ssout - eloss_array[segment.id, <int>((timestep-1)/qts_subdivisions)]
+
                     if reach_has_gage[i] == da_check_gage:
                         printf("segment.id: %ld\t", segment.id)
                         printf("segment.id: %d\t", usgs_positions[reach_has_gage[i]])
                     flowveldepth[segment.id, timestep, 1] = out_buf[_i, 1]
                     flowveldepth[segment.id, timestep, 2] = out_buf[_i, 2]
+
+                    # Ensuring flow does not go negative
+                    if flowveldepth[segment.id, timestep, 0] <= 0.0:
+                        flowveldepth[segment.id, timestep, 0] = 0.0
 
             # For each reach,
             # at the end of flow calculation, Check if there is something to assimilate

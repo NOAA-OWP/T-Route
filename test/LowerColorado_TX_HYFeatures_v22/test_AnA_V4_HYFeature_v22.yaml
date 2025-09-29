@@ -1,0 +1,91 @@
+# $ python3 -m nwm_routing -f -V4 test_AnA_V4_HYFeature.yaml
+#--------------------------------------------------------------------------------
+log_parameters:
+    #----------
+    showtiming: True
+    log_level : DEBUG
+#--------------------------------------------------------------------------------
+network_topology_parameters:
+    #----------
+    supernetwork_parameters:
+        #----------
+        geo_file_path: domain/LowerColorado_v22_no_lakes.gpkg
+        columns: 
+            key: 'id'
+            downstream: 'to'
+            dx : 'Length_m'
+            n : 'n'
+            ncc : 'nCC'
+            s0 : 'So'
+            bw : 'BtmWdth'
+            waterbody : 'WaterbodyID'
+            gages : 'gage'
+            tw : 'TopWdth'
+            twcc : 'TopWdthCC'
+            musk : 'MusK'
+            musx : 'MusX'
+            cs : 'ChSlp'
+            alt: 'alt'
+            mainstem: 'mainstem'
+    waterbody_parameters:
+        #----------
+        break_network_at_waterbodies: True  
+#--------------------------------------------------------------------------------
+compute_parameters:
+    #----------
+    parallel_compute_method: by-subnetwork-jit-clustered # serial
+    compute_kernel         : V02-structured
+    assume_short_ts        : True
+    subnetwork_target_size : 10000
+    cpu_pool               : 36
+    restart_parameters:
+        #----------
+        start_datetime              : 2023-04-01_00:00
+        lite_channel_restart_file   : #restart/RESTART.2020082600_DOMAIN1
+        lite_waterbody_restart_file : #restart/waterbody_restart_202006011200
+    hybrid_parameters:
+        run_hybrid_routing: False
+        diffusive_domain  : #domain/coastal_domain_subset.yaml  
+        use_natl_xsections: False
+        topobathy_domain  : #domain/final_diffusive_natural_xs.nc 
+        run_refactored_network: False
+        refactored_domain: #domain/refactored_coastal_domain_subset.yaml 
+        refactored_topobathy_domain: #domain/refac_final_diffusive_natural_xs.nc 
+        coastal_boundary_domain: #domain/coastal_domain_crosswalk.yaml
+    forcing_parameters:
+        #----------
+        qts_subdivisions            : 12
+        dt                          : 300 # [sec]
+        qlat_input_folder           : channel_forcing 
+        qlat_file_pattern_filter    : "*.CHRTOUT_DOMAIN1.csv"
+        coastal_boundary_input_file : #boundary_forcing  
+        nts                         : 576 # 288 for 1day; 2592 for 9 days
+        max_loop_size               : 48   # [hr]  
+    data_assimilation_parameters:
+        #----------
+        streamflow_da:
+            #----------
+            streamflow_nudging            : False
+            diffusive_streamflow_nudging  : False                               
+        reservoir_da:
+            #----------
+            reservoir_persistence_da:
+                #----------
+                reservoir_persistence_usgs  : False
+                reservoir_persistence_usace : False
+            reservoir_rfc_da:
+                #----------
+                reservoir_rfc_forecasts                 : False
+#--------------------------------------------------------------------------------
+output_parameters:
+#     #----------
+#     test_output : output/lcr_flowveldepth.pkl
+#     lite_restart:
+#         #----------
+#         lite_restart_output_directory: restart/
+#     lakeout_output: lakeout/
+    stream_output : 
+        stream_output_directory: output/
+        stream_output_time: -1 #[hr]
+        stream_output_type: '.nc' #please select only between netcdf '.nc' or '.csv' or '.pkl'
+        stream_output_internal_frequency: 60 #[min] it should be order of 5 minutes. For instance if you want to output every hour put 60    

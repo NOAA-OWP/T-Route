@@ -521,6 +521,8 @@ def compute_nhd_routing_v02(
     param_df,
     q0,
     qlats,
+    eloss_df,
+    ssout,
     usgs_df,
     lastobs_df,
     reservoir_usgs_df,
@@ -743,6 +745,7 @@ def compute_nhd_routing_v02(
 
                     qlat_sub = qlats.loc[param_df_sub.index]
                     q0_sub = q0.loc[param_df_sub.index]
+                    eloss_sub = eloss_df.loc[param_df_sub.index]
                                         
                     param_df_sub = param_df_sub.reindex(
                         param_df_sub.index.tolist() + lake_segs
@@ -753,6 +756,7 @@ def compute_nhd_routing_v02(
 
                     qlat_sub = qlat_sub.reindex(param_df_sub.index)
                     q0_sub = q0_sub.reindex(param_df_sub.index)
+                    eloss_sub = eloss_sub.reindex(param_df_sub.index)
 
                     # prepare reservoir DA data
                     (reservoir_usgs_df_sub, 
@@ -812,6 +816,8 @@ def compute_nhd_routing_v02(
                             param_df_sub.values,
                             q0_sub.values.astype("float32"),
                             qlat_sub.values.astype("float32"),
+                            eloss_sub.values.astype("float32"),
+                            ssout,
                             lake_segs, 
                             waterbodies_df_sub.values,
                             data_assimilation_parameters,
@@ -1116,6 +1122,8 @@ def compute_nhd_routing_v02(
                             param_df_sub.values,
                             q0_sub.values.astype("float32"),
                             qlat_sub.values.astype("float32"),
+                            eloss_sub.values.astype("float32"),
+                            ssout,
                             lake_segs,
                             waterbodies_df_sub.values,
                             data_assimilation_parameters,
@@ -1337,6 +1345,8 @@ def compute_nhd_routing_v02(
                         param_df_sub.values,
                         q0_sub.values.astype("float32"),
                         qlat_sub.values.astype("float32"),
+                        eloss_sub.values.astype("float32"),
+                        ssout,
                         lake_segs,
                         waterbodies_df_sub.values,
                         data_assimilation_parameters,
@@ -1521,6 +1531,8 @@ def compute_nhd_routing_v02(
                     param_df_sub.values,
                     q0_sub.values.astype("float32"),
                     qlat_sub.values.astype("float32"),
+                    eloss_sub.values.astype("float32"),
+                    ssout,
                     lake_segs,
                     waterbodies_df_sub.values,
                     data_assimilation_parameters,
@@ -1696,6 +1708,8 @@ def compute_nhd_routing_v02(
                     param_df_sub.values,
                     q0_sub.values.astype("float32"),
                     qlat_sub.values.astype("float32"),
+                    eloss_sub.values.astype("float32"),
+                    ssout,
                     lake_segs,
                     waterbodies_df_sub.values,
                     data_assimilation_parameters,

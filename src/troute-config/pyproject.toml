@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools"]
 
 [project]
 authors = [
@@ -19,7 +19,7 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dependencies = [
-  "pydantic~=1.10",
+  "pydantic==2.11.4",
   "typing_extensions",
 ]
 description = "Modules for validating and programatically accessing troute configuration files."

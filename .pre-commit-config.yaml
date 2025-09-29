@@ -1,0 +1,21 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        files: ^src/troute-rnr/
+      - id: end-of-file-fixer
+        files: ^src/troute-rnr/
+      - id: check-yaml
+        files: ^src/troute-rnr/
+      - id: debug-statements
+        files: ^src/troute-rnr/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.5
+    hooks:
+      - id: ruff
+        args: ["--fix", "--config=src/troute-rnr/pyproject.toml"]
+        files: ^src/troute-rnr/
+      - id: ruff-format
+        files: ^src/troute-rnr/
