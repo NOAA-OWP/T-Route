@@ -79,3 +79,19 @@ bower_components/
 .grunt/
 src/vendor/
 dist/
+
+# Build dirs #
+##############
+build/
+
+# .vscode files #
+#################
+.vscode/
+
+# UV lock #
+###########
+uv.lock
+
+# data #
+########
+data/
