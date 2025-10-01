@@ -2391,6 +2391,7 @@ def write_flowveldepth(
         nudge = nudge[:, 1:]
     nudge_df = pd.DataFrame(data=nudge, index=usgs_positions_id).iloc[:,ind]
     empty_ids = list(set(flowveldepth.index).difference(set(nudge_df.index)))
+    pd.set_option('future.no_silent_downcasting', True)
     empty_df = pd.DataFrame(index=empty_ids, columns=nudge_df.columns).fillna(-9999.0)
     nudge_df = pd.concat([nudge_df, empty_df]).loc[flowveldepth.index]
     file_name_time = t0

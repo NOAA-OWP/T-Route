@@ -228,6 +228,8 @@ def main_v04(argv):
             data_assimilation.reservoir_usgs_param_df,
             data_assimilation.reservoir_usace_df,
             data_assimilation.reservoir_usace_param_df,
+            data_assimilation.reservoir_usbr_df,
+            data_assimilation.reservoir_usbr_param_df,
             data_assimilation.reservoir_rfc_df,
             data_assimilation.reservoir_rfc_param_df,
             data_assimilation.great_lakes_df,
@@ -1142,6 +1144,8 @@ def nwm_route(
     reservoir_usgs_param_df,
     reservoir_usace_df,
     reservoir_usace_param_df,
+    reservoir_usbr_df,
+    reservoir_usbr_param_df,
     reservoir_rfc_df,
     reservoir_rfc_param_df,
     great_lakes_df,
@@ -1202,6 +1206,8 @@ def nwm_route(
             reservoir_usgs_param_df,
             reservoir_usace_df,
             reservoir_usace_param_df,
+            reservoir_usbr_df,
+            reservoir_usbr_param_df,
             reservoir_rfc_df,
             reservoir_rfc_param_df,
             assume_short_ts,
@@ -1235,6 +1241,8 @@ def nwm_route(
         reservoir_usgs_param_df,
         reservoir_usace_df,
         reservoir_usace_param_df,
+        reservoir_usbr_df,
+        reservoir_usbr_param_df,
         reservoir_rfc_df,
         reservoir_rfc_param_df,
         great_lakes_df,
@@ -1682,6 +1690,8 @@ def main_v03(argv):
             reservoir_usgs_param_df,
             reservoir_usace_df,
             reservoir_usace_param_df,
+            pd.DataFrame(), #empty dataframe for USBR data...
+            pd.DataFrame(), #empty dataframe for USBR param data...
             pd.DataFrame(), #empty dataframe for RFC data...not needed unless running via BMI
             pd.DataFrame(), #empty dataframe for RFC param data...not needed unless running via BMI
             pd.DataFrame(), #empty dataframe for great lakes data...

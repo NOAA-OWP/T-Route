@@ -46,10 +46,10 @@ compute_parameters:
         run_hybrid_routing: True
         diffusive_domain  : domain/coastal_domain_subset.yaml  
         use_natl_xsections: False
-        topobathy_domain  : domain/final_diffusive_natural_xs.nc 
+        # topobathy_domain  : domain/final_diffusive_natural_xs.nc  # File does not exist 
         run_refactored_network: False
         refactored_domain: domain/refactored_coastal_domain_subset.yaml 
-        refactored_topobathy_domain: domain/refac_final_diffusive_natural_xs.nc 
+        # refactored_topobathy_domain: domain/refac_final_diffusive_natural_xs.nc  # File does not exist
         coastal_boundary_domain: domain/coastal_domain_crosswalk.yaml
     forcing_parameters:
         #----------

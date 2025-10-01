@@ -143,6 +143,8 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
                                   reservoir_usgs_param_df,
                                   reservoir_usace_df,
                                   reservoir_usace_param_df,
+                                  reservoir_usbr_df,
+                                  reservoir_usbr_param_df,
                                   reservoir_rfc_df,
                                   reservoir_rfc_param_df,
                                   great_lakes_df,
@@ -161,6 +163,8 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
     reservoir_usgs_param_df  (DataFrame): USGS reservoir DA state parameters
     reservoir_usace_df       (DataFrame): gage flow observations at USACE-type reservoirs
     reservoir_usace_param_df (DataFrame): USACE reservoir DA state parameters
+    reservoir_usbr_df       (DataFrame): gage flow observations at USBR-type reservoirs
+    reservoir_usbr_param_df (DataFrame): USBR reservoir DA state parameters
     reservoir_rfc_df         (DataFrame): gage flow observations and forecasts at RFC-type reservoirs
     reservoir_rfc_param_df   (DataFrame): RFC reservoir DA state parameters
     waterbody_types_df_sub   (DataFrame): type-codes for waterbodies in sub domain
@@ -181,7 +185,12 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
     reservoir_usace_prev_persisted_flow     (ndarray): previously persisted outflow rates at USACE reservoirs
     reservoir_usace_persistence_update_time (ndarray): update time (sec) of persisted value at USACE reservoirs
     reservoir_usace_persistence_index       (ndarray): index denoting elapsed persistence epochs at USACE reservoirs
-
+    reservoir_usbr_df_sub                (DataFrame): gage flow observations for USBR-type reservoirs in sub domain
+    reservoir_usbr_df_time                 (ndarray): time in seconds from model initialization time
+    reservoir_usbr_update_time             (ndarray): update time (sec) to search for new observation at USBR reservoirs
+    reservoir_usbr_prev_persisted_flow     (ndarray): previously persisted outflow rates at USBR reservoirs
+    reservoir_usbr_persistence_update_time (ndarray): update time (sec) of persisted value at USBR reservoirs
+    reservoir_usbr_persistence_index       (ndarray): index denoting elapsed persistence epochs at USBR reservoirs
     '''
     if not reservoir_usgs_df.empty:
         usgs_wbodies_sub      = waterbody_types_df_sub[
@@ -233,6 +242,32 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
         reservoir_usace_persistence_index = pd.DataFrame().to_numpy().reshape(0,)
         if not waterbody_types_df_sub.empty:
             waterbody_types_df_sub.loc[waterbody_types_df_sub['reservoir_type'] == 3] = 1
+
+    # select USBR reservoir DA data waterbodies in sub-domain
+    if not reservoir_usbr_df.empty:
+        usbr_wbodies_sub      = waterbody_types_df_sub[
+                                    waterbody_types_df_sub['reservoir_type']==7
+                                ].index
+        if exclude_segments:
+            usbr_wbodies_sub = list(set(usbr_wbodies_sub).difference(set(exclude_segments)))
+        reservoir_usbr_df_sub = reservoir_usbr_df.loc[usbr_wbodies_sub]
+        reservoir_usbr_df_time = []
+        for timestamp in reservoir_usbr_df.columns:
+            reservoir_usbr_df_time.append((timestamp - t0).total_seconds())
+        reservoir_usbr_df_time = np.array(reservoir_usbr_df_time)
+        reservoir_usbr_update_time = reservoir_usbr_param_df['update_time'].loc[usbr_wbodies_sub].to_numpy()
+        reservoir_usbr_prev_persisted_flow = reservoir_usbr_param_df['prev_persisted_outflow'].loc[usbr_wbodies_sub].to_numpy()
+        reservoir_usbr_persistence_update_time = reservoir_usbr_param_df['persistence_update_time'].loc[usbr_wbodies_sub].to_numpy()
+        reservoir_usbr_persistence_index = reservoir_usbr_param_df['persistence_index'].loc[usbr_wbodies_sub].to_numpy()
+    else: 
+        reservoir_usbr_df_sub = pd.DataFrame()
+        reservoir_usbr_df_time = pd.DataFrame().to_numpy().reshape(0,)
+        reservoir_usbr_update_time = pd.DataFrame().to_numpy().reshape(0,)
+        reservoir_usbr_prev_persisted_flow = pd.DataFrame().to_numpy().reshape(0,)
+        reservoir_usbr_persistence_update_time = pd.DataFrame().to_numpy().reshape(0,)
+        reservoir_usbr_persistence_index = pd.DataFrame().to_numpy().reshape(0,)
+        if not waterbody_types_df_sub.empty:
+            waterbody_types_df_sub.loc[waterbody_types_df_sub['reservoir_type'] == 7] = 1
     
     # RFC reservoirs
     if not reservoir_rfc_df.empty:
@@ -289,6 +324,7 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
     return (
         reservoir_usgs_df_sub, reservoir_usgs_df_time, reservoir_usgs_update_time, reservoir_usgs_prev_persisted_flow, reservoir_usgs_persistence_update_time, reservoir_usgs_persistence_index,
         reservoir_usace_df_sub, reservoir_usace_df_time, reservoir_usace_update_time, reservoir_usace_prev_persisted_flow, reservoir_usace_persistence_update_time, reservoir_usace_persistence_index,
+        reservoir_usbr_df_sub, reservoir_usbr_df_time, reservoir_usbr_update_time, reservoir_usbr_prev_persisted_flow, reservoir_usbr_persistence_update_time, reservoir_usbr_persistence_index,
         reservoir_rfc_df_sub, reservoir_rfc_totalCounts, reservoir_rfc_file, reservoir_rfc_use_forecast, reservoir_rfc_timeseries_idx, reservoir_rfc_update_time, reservoir_rfc_da_timestep, reservoir_rfc_persist_days,
         gl_df_sub, gl_parm_lake_id_sub, gl_param_flows_sub, gl_param_time_sub, gl_param_update_time_sub, gl_climatology_df_sub,
         waterbody_types_df_sub
@@ -319,6 +355,8 @@ def compute_log_mc(
     reservoir_usgs_param_df,
     reservoir_usace_df,
     reservoir_usace_param_df,
+    reservoir_usbr_df,
+    reservoir_usbr_param_df,
     reservoir_rfc_df,
     reservoir_rfc_param_df,
     assume_short_ts,
@@ -381,6 +419,9 @@ def compute_log_mc(
             outPutStr = "Reservoir persistence USACE: "+str(data_assimilation_parameters['reservoir_da']['reservoir_persistence_da']['reservoir_persistence_usace'])
             preRunLog.write(outPutStr+'\n')
             LOG.info(outPutStr)
+            outPutStr = "Reservoir persistence USBR: "+str(data_assimilation_parameters['reservoir_da']['reservoir_persistence_da']['reservoir_persistence_usbr'])
+            preRunLog.write(outPutStr+'\n')
+            LOG.info(outPutStr)
             preRunLog.write("Reservoir RFC forecasts: "+str(data_assimilation_parameters['reservoir_da']['reservoir_rfc_da']['reservoir_rfc_forecasts'])+'\n')
 
         preRunLog.write("\n")                   
@@ -408,6 +449,7 @@ def compute_log_mc(
         preRunLog.write("Lastobs files, number of gages: "+str(len(lastobs_df.index))+'\n')
         preRunLog.write("Number of USGS gages in waterbodies: "+str(len(reservoir_usgs_df.index))+'\n')
         preRunLog.write("Number of USACE gages in waterbodies: "+str(len(reservoir_usace_df.index))+'\n')
+        preRunLog.write("Number of USBR gages in waterbodies: "+str(len(reservoir_usbr_df.index))+'\n')
         preRunLog.write("Number of RFC gages in waterbodies: "+str(len(reservoir_rfc_df.index))+'\n')
         preRunLog.write("\n")        
 
@@ -527,6 +569,8 @@ def compute_nhd_routing_v02(
     reservoir_usgs_param_df,
     reservoir_usace_df,
     reservoir_usace_param_df,
+    reservoir_usbr_df,
+    reservoir_usbr_param_df,
     reservoir_rfc_df,
     reservoir_rfc_param_df,
     great_lakes_df,
@@ -767,6 +811,12 @@ def compute_nhd_routing_v02(
                      reservoir_usace_prev_persisted_flow,
                      reservoir_usace_persistence_update_time,
                      reservoir_usace_persistence_index,
+                     reservoir_usbr_df_sub, 
+                     reservoir_usbr_df_time,
+                     reservoir_usbr_update_time,
+                     reservoir_usbr_prev_persisted_flow,
+                     reservoir_usbr_persistence_update_time,
+                     reservoir_usbr_persistence_index,
                      reservoir_rfc_df_sub, 
                      reservoir_rfc_totalCounts, 
                      reservoir_rfc_file, 
@@ -787,6 +837,8 @@ def compute_nhd_routing_v02(
                         reservoir_usgs_param_df,
                         reservoir_usace_df, 
                         reservoir_usace_param_df,
+                        reservoir_usbr_df,
+                        reservoir_usbr_param_df,
                         reservoir_rfc_df,
                         reservoir_rfc_param_df,
                         great_lakes_df,
@@ -848,6 +900,14 @@ def compute_nhd_routing_v02(
                             reservoir_usace_prev_persisted_flow.astype("float32"),
                             reservoir_usace_persistence_update_time.astype("float32"),
                             reservoir_usace_persistence_index.astype("float32"),
+                            # USBR Hybrid Reservoir DA data
+                            reservoir_usbr_df_sub.values.astype("float32"),
+                            reservoir_usbr_df_sub.index.values.astype("int32"),
+                            reservoir_usbr_df_time.astype("float32"),
+                            reservoir_usbr_update_time.astype("float32"),
+                            reservoir_usbr_prev_persisted_flow.astype("float32"),
+                            reservoir_usbr_persistence_update_time.astype("float32"),
+                            reservoir_usbr_persistence_index.astype("float32"),
                             # RFC Reservoir DA data
                             reservoir_rfc_df_sub.values.astype("float32"),
                             reservoir_rfc_df_sub.index.values.astype("int32"),
@@ -1073,6 +1133,12 @@ def compute_nhd_routing_v02(
                      reservoir_usace_prev_persisted_flow,
                      reservoir_usace_persistence_update_time,
                      reservoir_usace_persistence_index,
+                     reservoir_usbr_df_sub, 
+                     reservoir_usbr_df_time,
+                     reservoir_usbr_update_time,
+                     reservoir_usbr_prev_persisted_flow,
+                     reservoir_usbr_persistence_update_time,
+                     reservoir_usbr_persistence_index,
                      reservoir_rfc_df_sub, 
                      reservoir_rfc_totalCounts, 
                      reservoir_rfc_file, 
@@ -1093,6 +1159,8 @@ def compute_nhd_routing_v02(
                         reservoir_usgs_param_df,
                         reservoir_usace_df, 
                         reservoir_usace_param_df,
+                        reservoir_usbr_df, 
+                        reservoir_usbr_param_df,
                         reservoir_rfc_df,
                         reservoir_rfc_param_df,
                         great_lakes_df,
@@ -1152,6 +1220,14 @@ def compute_nhd_routing_v02(
                             reservoir_usace_prev_persisted_flow.astype("float32"),
                             reservoir_usace_persistence_update_time.astype("float32"),
                             reservoir_usace_persistence_index.astype("float32"),
+                            # USBR Hybrid Reservoir DA data
+                            reservoir_usbr_df_sub.values.astype("float32"),
+                            reservoir_usbr_df_sub.index.values.astype("int32"),
+                            reservoir_usbr_df_time.astype('float32'),
+                            reservoir_usbr_update_time.astype("float32"),
+                            reservoir_usbr_prev_persisted_flow.astype("float32"),
+                            reservoir_usbr_persistence_update_time.astype("float32"),
+                            reservoir_usbr_persistence_index.astype("float32"),
                             # RFC Reservoir DA data
                             reservoir_rfc_df_sub.values.astype("float32"),
                             reservoir_rfc_df_sub.index.values.astype("int32"),
@@ -1294,6 +1370,12 @@ def compute_nhd_routing_v02(
                  reservoir_usace_prev_persisted_flow,
                  reservoir_usace_persistence_update_time,
                  reservoir_usace_persistence_index,
+                 reservoir_usbr_df_sub, 
+                 reservoir_usbr_df_time,
+                 reservoir_usbr_update_time,
+                 reservoir_usbr_prev_persisted_flow,
+                 reservoir_usbr_persistence_update_time,
+                 reservoir_usbr_persistence_index,
                  reservoir_rfc_df_sub, 
                  reservoir_rfc_totalCounts, 
                  reservoir_rfc_file, 
@@ -1314,6 +1396,8 @@ def compute_nhd_routing_v02(
                     reservoir_usgs_param_df,
                     reservoir_usace_df, 
                     reservoir_usace_param_df,
+                    reservoir_usbr_df, 
+                    reservoir_usbr_param_df,
                     reservoir_rfc_df,
                     reservoir_rfc_param_df,
                     great_lakes_df,
@@ -1366,6 +1450,14 @@ def compute_nhd_routing_v02(
                         reservoir_usace_prev_persisted_flow.astype("float32"),
                         reservoir_usace_persistence_update_time.astype("float32"),
                         reservoir_usace_persistence_index.astype("float32"),
+                        # USBR Hybrid Reservoir DA data
+                        reservoir_usbr_df_sub.values.astype("float32"),
+                        reservoir_usbr_df_sub.index.values.astype("int32"),
+                        reservoir_usbr_df_time.astype('float32'),
+                        reservoir_usbr_update_time.astype("float32"),
+                        reservoir_usbr_prev_persisted_flow.astype("float32"),
+                        reservoir_usbr_persistence_update_time.astype("float32"),
+                        reservoir_usbr_persistence_index.astype("float32"),
                         # RFC Reservoir DA data
                         reservoir_rfc_df_sub.values.astype("float32"),
                         reservoir_rfc_df_sub.index.values.astype("int32"),
@@ -1479,6 +1571,12 @@ def compute_nhd_routing_v02(
              reservoir_usace_prev_persisted_flow,
              reservoir_usace_persistence_update_time,
              reservoir_usace_persistence_index,
+             reservoir_usbr_df_sub, 
+             reservoir_usbr_df_time,
+             reservoir_usbr_update_time,
+             reservoir_usbr_prev_persisted_flow,
+             reservoir_usbr_persistence_update_time,
+             reservoir_usbr_persistence_index,
              reservoir_rfc_df_sub, 
              reservoir_rfc_totalCounts, 
              reservoir_rfc_file, 
@@ -1499,6 +1597,8 @@ def compute_nhd_routing_v02(
                 reservoir_usgs_param_df,
                 reservoir_usace_df, 
                 reservoir_usace_param_df,
+                reservoir_usbr_df, 
+                reservoir_usbr_param_df,
                 reservoir_rfc_df,
                 reservoir_rfc_param_df,
                 great_lakes_df,
@@ -1550,6 +1650,14 @@ def compute_nhd_routing_v02(
                     reservoir_usace_prev_persisted_flow.astype("float32"),
                     reservoir_usace_persistence_update_time.astype("float32"),
                     reservoir_usace_persistence_index.astype("float32"),
+                    # USBR Hybrid Reservoir DA data
+                    reservoir_usbr_df_sub.values.astype("float32"),
+                    reservoir_usbr_df_sub.index.values.astype("int32"),
+                    reservoir_usbr_df_time.astype('float32'),
+                    reservoir_usbr_update_time.astype("float32"),
+                    reservoir_usbr_prev_persisted_flow.astype("float32"),
+                    reservoir_usbr_persistence_update_time.astype("float32"),
+                    reservoir_usbr_persistence_index.astype("float32"),
                     # RFC Reservoir DA data
                     reservoir_rfc_df_sub.values.astype("float32"),
                     reservoir_rfc_df_sub.index.values.astype("int32"),
@@ -1673,12 +1781,20 @@ def compute_nhd_routing_v02(
              reservoir_usace_prev_persisted_flow,
              reservoir_usace_persistence_update_time,
              reservoir_usace_persistence_index,
+             reservoir_usbr_df_sub, 
+             reservoir_usbr_df_time,
+             reservoir_usbr_update_time,
+             reservoir_usbr_prev_persisted_flow,
+             reservoir_usbr_persistence_update_time,
+             reservoir_usbr_persistence_index,
              waterbody_types_df_sub,
              ) = _prep_reservoir_da_dataframes(
                 reservoir_usgs_df,
                 reservoir_usgs_param_df,
                 reservoir_usace_df, 
                 reservoir_usace_param_df,
+                reservoir_usbr_df, 
+                reservoir_usbr_param_df,
                 waterbody_types_df_sub, 
                 t0,
                 from_files,
@@ -1725,6 +1841,14 @@ def compute_nhd_routing_v02(
                     reservoir_usace_prev_persisted_flow.astype("float32"),
                     reservoir_usace_persistence_update_time.astype("float32"),
                     reservoir_usace_persistence_index.astype("float32"),
+                    # USBR Hybrid Reservoir DA data
+                    reservoir_usbr_df_sub.values.astype("float32"),
+                    reservoir_usbr_df_sub.index.values.astype("int32"),
+                    reservoir_usbr_df_time.astype('float32'),
+                    reservoir_usbr_update_time.astype("float32"),
+                    reservoir_usbr_prev_persisted_flow.astype("float32"),
+                    reservoir_usbr_persistence_update_time.astype("float32"),
+                    reservoir_usbr_persistence_index.astype("float32"),
                     {
                         us: fvd
                         for us, fvd in flowveldepth_interorder.items()

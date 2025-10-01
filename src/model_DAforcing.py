@@ -78,6 +78,7 @@ class DAforcing_model():
             
             usgs_persistence = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usgs', False)
             usace_persistence = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usace', False)
+            usbr_persistence = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usbr', False)
             rfc = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_rfc_da', {}).get('reservoir_rfc_forecasts', False)
 
             qc_threshold = data_assimilation_parameters.get('qc_threshold')
@@ -129,6 +130,14 @@ class DAforcing_model():
             # USACE Observations        
             if usace_persistence:
                 usace_timeslice_path = str(data_assimilation_parameters.get('usace_timeslices_folder'))
+                self._reservoir_usace_df = _read_timeslice_files(usace_timeslice_path, 
+                                                                 timeslice_dates,
+                                                                 qc_threshold,
+                                                                 900, #15 minutes
+                                                                 cpu_pool,)
+            
+            if usbr_persistence:
+                usace_timeslice_path = str(data_assimilation_parameters.get('usbr_timeslices_folder'))
                 self._reservoir_usace_df = _read_timeslice_files(usace_timeslice_path, 
                                                                  timeslice_dates,
                                                                  qc_threshold,
