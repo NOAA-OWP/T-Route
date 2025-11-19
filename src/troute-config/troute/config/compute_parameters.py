@@ -1,11 +1,10 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, DirectoryPath, FilePath, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime
 
-from typing import Optional, List, Union
+from typing import Any, Dict, Optional, List, Union
 from typing_extensions import Literal
 
-from .types import FilePath, DirectoryPath
-from ._validators import coerce_datetime, coerce_none_to_default
+from ._validators import coerce_datetime
 
 
 # ---------------------------- Compute Parameters ---------------------------- #
@@ -20,54 +19,6 @@ ParallelComputeMethod = Literal[
 ]
 
 ComputeKernel = Literal["V02-structured", "diffusive", "diffusice_cnt"]
-
-
-class ComputeParameters(BaseModel):
-    """
-    Parameters specific to the routing simulation.
-    """
-    parallel_compute_method: ParallelComputeMethod = "by-network"
-    """
-    parallel computing scheme used during simulation, options below
-    - "serial": no parallelization
-    - "by-network": parallelization across independent drainage basins
-    - "by-subnetwork-jit": parallelization across subnetworks 
-    - "by-subnetwork-jit-clustered": parallelization across subnetworks, with clustering to optimize scaling
-    """
-    compute_kernel: ComputeKernel = "V02-structured"
-    """
-    routing engine used for simulation
-    - "V02-structured" - Muskingum Cunge
-    NOTE: There are two other options that were previously being developed for use with the diffusive kernel, 
-    but they are now depricated:
-    - "diffusive" - Diffusive with adaptive timestepping
-    - "diffusice_cnt" - Diffusive with CNT numerical solution
-    TODO: Remove these additional options? And this parameter altogether as there is only one option?
-    """
-    assume_short_ts: bool = False
-    """
-    If True the short timestep assumption used in WRF hyro is used. if False, the assumption is dropped.
-    """
-    subnetwork_target_size: int = 10000
-    """
-    The target number of segments per subnetwork, only needed for "by-subnetwork..." parallel schemes.
-    The magnitude of this parameter affects parallel scaling. This is to improve efficiency. Default value has 
-    been tested as the fastest for CONUS simultions. For smaller domains this can be reduced.
-    """
-    cpu_pool: Optional[int] = 1
-    """
-    Number of CPUs used for parallel computations
-    If parallel_compute_method is anything but 'serial', this determines how many cpus to use for parallel processing.
-    """
-    return_courant: bool = False
-    """
-    If True, Courant metrics are returnd with simulations. This only works for MC simulations
-    """
-
-    restart_parameters: "RestartParameters" = Field(default_factory=dict)
-    hybrid_parameters: "HybridParameters" = Field(default_factory=dict)
-    forcing_parameters: "ForcingParameters" = Field(default_factory=dict)
-    data_assimilation_parameters: "DataAssimilationParameters" = Field(default_factory=dict)
 
 
 # TODO: determine how to handle context specific required fields
@@ -148,9 +99,7 @@ class RestartParameters(BaseModel):
     """
     
 
-    _coerce_datetime = validator("start_datetime", pre=True, allow_reuse=True)(
-        coerce_datetime
-    )
+    _coerce_datetime = field_validator("start_datetime", mode="before")(coerce_datetime)
 
 
 # TODO: determine how to handle context specific required fields
@@ -351,7 +300,8 @@ class ReservoirDA(BaseModel):
     """
 
 
-class DataAssimilationParameters(BaseModel, extra='ignore'):
+class DataAssimilationParameters(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     """
     Parameters controlling data assimilation.
     """
@@ -402,9 +352,14 @@ class DataAssimilationParameters(BaseModel, extra='ignore'):
     used for assimilation, even those markesd as very poor quality.
     """
 
-    _coerce_none_to_default = validator(
-        "timeslice_lookback_hours", "qc_threshold", pre=True, allow_reuse=True
-    )(coerce_none_to_default)
+    @model_validator(mode='before')
+    @classmethod
+    def coerce_none_to_default(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if values.get("qc_threshold") is None:
+            values["qc_threshold"] = 1
+        if values.get("timeslice_lookback_hours") is None:
+            values["timeslice_lookback_hours"] = 24 
+        return values
 
 
 class ForcingParameters(BaseModel):
@@ -470,6 +425,54 @@ class ForcingParameters(BaseModel):
     """
 
 
-ComputeParameters.update_forward_refs()
-QLateralForcingSet.update_forward_refs()
-ReservoirRfcParameters.update_forward_refs()
+class ComputeParameters(BaseModel):
+    """
+    Parameters specific to the routing simulation.
+    """
+    parallel_compute_method: ParallelComputeMethod = "by-network"
+    """
+    parallel computing scheme used during simulation, options below
+    - "serial": no parallelization
+    - "by-network": parallelization across independent drainage basins
+    - "by-subnetwork-jit": parallelization across subnetworks 
+    - "by-subnetwork-jit-clustered": parallelization across subnetworks, with clustering to optimize scaling
+    """
+    compute_kernel: ComputeKernel = "V02-structured"
+    """
+    routing engine used for simulation
+    - "V02-structured" - Muskingum Cunge
+    NOTE: There are two other options that were previously being developed for use with the diffusive kernel, 
+    but they are now depricated:
+    - "diffusive" - Diffusive with adaptive timestepping
+    - "diffusice_cnt" - Diffusive with CNT numerical solution
+    TODO: Remove these additional options? And this parameter altogether as there is only one option?
+    """
+    assume_short_ts: bool = False
+    """
+    If True the short timestep assumption used in WRF hyro is used. if False, the assumption is dropped.
+    """
+    subnetwork_target_size: int = 10000
+    """
+    The target number of segments per subnetwork, only needed for "by-subnetwork..." parallel schemes.
+    The magnitude of this parameter affects parallel scaling. This is to improve efficiency. Default value has 
+    been tested as the fastest for CONUS simultions. For smaller domains this can be reduced.
+    """
+    cpu_pool: Optional[int] = 1
+    """
+    Number of CPUs used for parallel computations
+    If parallel_compute_method is anything but 'serial', this determines how many cpus to use for parallel processing.
+    """
+    return_courant: bool = False
+    """
+    If True, Courant metrics are returnd with simulations. This only works for MC simulations
+    """
+
+    restart_parameters: RestartParameters = Field(default_factory=RestartParameters)
+    hybrid_parameters: HybridParameters = Field(default_factory=HybridParameters)
+    forcing_parameters: ForcingParameters = Field(default_factory=ForcingParameters)
+    data_assimilation_parameters: DataAssimilationParameters = Field(default_factory=DataAssimilationParameters)
+
+
+ComputeParameters.model_rebuild()
+QLateralForcingSet.model_rebuild()
+ReservoirRfcParameters.model_rebuild()

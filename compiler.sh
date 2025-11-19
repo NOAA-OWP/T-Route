@@ -11,6 +11,7 @@ build_framework=true
 build_routing=true
 build_config=true
 build_nwm=true
+build_bmi=true
 
 if [ -z "$F90" ]
 then
@@ -120,6 +121,15 @@ fi
 if [[ "$build_nwm" == true ]]; then
   #updates troute package with the execution script
   cd $REPOROOT/src/troute-nwm
+  if [[ ${WITH_EDITABLE} == true ]]; then
+    pip install --editable . || exit
+  else
+    pip install . || exit
+  fi
+fi
+
+if [[ "$build_bmi" == true ]]; then
+  cd $REPOROOT/src/troute-bmi
   if [[ ${WITH_EDITABLE} == true ]]; then
     pip install --editable . || exit
   else

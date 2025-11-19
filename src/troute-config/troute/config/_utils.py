@@ -9,7 +9,7 @@ def recursively_update_forward_refs(base_model: Type[BaseModel]):
     horizon: list[Type[BaseModel]] = [base_model]
     while horizon:
         model = horizon.pop(0)
-        model.update_forward_refs()
+        model.model_rebuild()
 
         for attr_name in dir(model):
             attr = getattr(model, attr_name)
