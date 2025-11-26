@@ -88,18 +88,28 @@ def read_geopkg(file_path, compute_parameters, waterbody_parameters, cpu_pool):
     flowpaths_df = table_dict.get('flowpaths', pd.DataFrame())
     flowpath_attributes_df = table_dict.get('flowpath_attributes', pd.DataFrame())
 
-    # Check if 'link' column exists and rename it to 'id'
+    # Check if 'link' column exists; drop existing 'id' col; rename 'link' to 'id'
     if 'link' in flowpath_attributes_df.columns:
+        # In HF 2.2, a 'link' field was introduced. The field is identical to
+        # previous version's 'id' field, but it preferred moving forwards.
+        flowpath_attributes_df.drop(columns=['id'], errors='ignore', inplace=True)
         flowpath_attributes_df.rename(columns={'link': 'id'}, inplace=True) 
-     
+    
+    # NOTE: aaraney: `flowpaths_df` and `flowpath_attributes_df` can share
+    # column names but this is not accounted for elsewhere. im not sure if it
+    # is okay to assume that if the left and right df have the same `id` field
+    # that the other shared columns will match and thus it is safe to set, for
+    # example, the left suffix to "".
     # Merge flowpaths and flowpath_attributes 
     flowpaths = pd.merge(
         flowpaths_df, 
         flowpath_attributes_df, 
         on='id', 
-        how='inner'
+        how='inner',
+        # NOTE: aaraney: not sure if this is safe
+        suffixes=("", "_flowpath_attributes"),
     )
-
+    
     lakes = table_dict.get('lakes', pd.DataFrame())
     network = table_dict.get('network', pd.DataFrame())
     nexus = table_dict.get('nexus', pd.DataFrame())
@@ -601,7 +611,7 @@ class HYFeaturesNetwork(AbstractNetwork):
             self._duplicate_ids_df = pd.DataFrame()
             self._gl_climatology_df = pd.DataFrame()
 
-        self._dataframe = self.dataframe.drop('waterbody', axis=1).drop_duplicates()
+        self._dataframe = self.dataframe.drop('waterbody', axis=1, errors='ignore').drop_duplicates()
 
     def preprocess_data_assimilation(self, network):
         if not network.empty:
@@ -726,7 +736,16 @@ class HYFeaturesNetwork(AbstractNetwork):
             # This capability should be here, but we need to think through how to handle all of this 
             # data in memory for large domains and many timesteps... - shorvath, Feb 28, 2024
             qlat_file_pattern_filter = self.forcing_parameters.get("qlat_file_pattern_filter", None)
-            if qlat_file_pattern_filter=="nex-*":
+            
+            if qlat_file_pattern_filter=="*.CATOUT.csv":
+                for f in qlat_files:
+                    df = pd.read_csv(f)
+                    df = df.set_index('feature_id')
+                    dfs.append(df)
+                
+                qlats_df = pd.concat(dfs, axis=1) 
+                qlats_df = qlats_df[qlats_df.index.isin(self.segment_index)]
+            elif qlat_file_pattern_filter=="nex-*":
                 for f in qlat_files:
                     df = pd.read_csv(f, names=['timestamp', 'qlat'], index_col=[0])
                     df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y%m%d%H%M')
@@ -752,10 +771,11 @@ class HYFeaturesNetwork(AbstractNetwork):
                 # lateral flows [m^3/s] are stored at NEXUS points with NEXUS ids
                 nexuses_lateralflows_df = pd.concat(dfs, axis=1) 
             
-            # Take flowpath ids entering NEXUS and replace NEXUS ids by the upstream flowpath ids
-            qlats_df = nexuses_lateralflows_df.rename(index=self.downstream_flowpath_dict)
-            qlats_df = qlats_df[qlats_df.index.isin(self.segment_index)]
-
+            if qlat_file_pattern_filter!="*.CATOUT.csv":
+                # Take flowpath ids entering NEXUS and replace NEXUS ids by the upstream flowpath ids
+                qlats_df = nexuses_lateralflows_df.rename(index=self.downstream_flowpath_dict)
+                qlats_df = qlats_df[qlats_df.index.isin(self.segment_index)]
+            
             '''
             #For a terminal nexus, we want to include the lateral flow from the catchment contributing to that nexus
             #one way to do that is to cheat and put that lateral flow at the upstream...this is probably the simplest way
