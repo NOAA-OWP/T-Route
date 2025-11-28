@@ -601,7 +601,7 @@ class HYFeaturesNetwork(AbstractNetwork):
             self._duplicate_ids_df = pd.DataFrame()
             self._gl_climatology_df = pd.DataFrame()
 
-        self._dataframe = self.dataframe.drop('waterbody', axis=1).drop_duplicates()
+        self._dataframe = self.dataframe.drop('waterbody', axis=1, errors='ignore').drop_duplicates()
 
     def preprocess_data_assimilation(self, network):
         if not network.empty:
