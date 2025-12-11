@@ -1,0 +1,6 @@
+dask==2025.5.1
+matplotlib==3.9.0
+mapclassify==2.8.1
+folium==0.19.7
+jupyterlab==4.4.6
+ipykernel==6.29.4

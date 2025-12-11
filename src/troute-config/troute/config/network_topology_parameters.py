@@ -1,18 +1,7 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, DirectoryPath, FilePath, Field, field_validator
 
 from typing import Optional, List, Union, Dict, Any
 from typing_extensions import Literal
-
-from .types import FilePath, DirectoryPath
-
-
-class NetworkTopologyParameters(BaseModel):
-    """
-    Parameters controlling how the stream network is synthesized.
-    """
-    preprocessing_parameters: "PreprocessingParameters" = Field(default_factory=dict)
-    supernetwork_parameters: "SupernetworkParameters"
-    waterbody_parameters: "WaterbodyParameters" = Field(default_factory=dict)
 
 
 class PreprocessingParameters(BaseModel):
@@ -59,6 +48,15 @@ class SupernetworkParameters(BaseModel):
     Path to the hydrofabric. Currently accepts geopackage (assumes HYFeatures), geojson (assumes HYFeatures), 
     json (assumes HYFeatures), netcdf (assumes NHD).
     """
+
+    nhf_discretization_len: float = Field(
+        default=300, description="The length of the discretization segments within T-Route for NHF routing"
+    )
+                                          
+    nhf_discretization_buffer: float = Field(
+        default=0.3334, description="The % buffering to use when determining discretization for routing"
+    )
+
     network_type: Literal["HYFeaturesNetwork", "NHDNetwork"] = "HYFeaturesNetwork"
     """
     Specify if this is an NHD network or a HYFeatures network.
@@ -108,7 +106,7 @@ class SupernetworkParameters(BaseModel):
     driver_string: Union[str, Literal["NetCDF"]] = "NetCDF"
     layer_string: int = 0
     
-    @validator("columns", always=True)
+    @field_validator("columns", mode='before')
     def get_columns(cls, columns: dict, values: Dict[str, Any]) -> dict:
         if columns is None:
             if values['network_type']=="HYFeaturesNetwork":
@@ -182,7 +180,7 @@ class Columns(BaseModel):
     """
     channel bottom width
     """
-    waterbody: Optional[str] 
+    waterbody: Optional[str] = None 
     """
     waterbody identifier
     """
@@ -194,7 +192,7 @@ class Columns(BaseModel):
     """
     compound channel top width
     """
-    alt: Optional[str] 
+    alt: Optional[str] = None 
     """
     channel bottom altitude
     """
@@ -210,13 +208,17 @@ class Columns(BaseModel):
     """
     channel sideslope
     """
-    gages: Optional[str]
+    gages: Optional[str] = None
     """
     gage ID
     """
-    mainstem: Optional[str]
+    mainstem: Optional[str] = None
     """
     mainstem ID
+    """
+    divide_id: Optional[str] = None
+    """
+    Divide_id mapping flowpath to catchment
     """
 
 
@@ -249,9 +251,18 @@ class LevelPool(BaseModel):
     """
 
 
-NetworkTopologyParameters.update_forward_refs()
-PreprocessingParameters.update_forward_refs()
-SupernetworkParameters.update_forward_refs()
-WaterbodyParameters.update_forward_refs()
-LevelPool.update_forward_refs()
+class NetworkTopologyParameters(BaseModel):
+    """
+    Parameters controlling how the stream network is synthesized.
+    """
+    preprocessing_parameters: PreprocessingParameters = Field(default_factory=PreprocessingParameters)
+    supernetwork_parameters: SupernetworkParameters
+    waterbody_parameters: WaterbodyParameters = Field(default_factory=WaterbodyParameters)
+
+
+NetworkTopologyParameters.model_rebuild()
+PreprocessingParameters.model_rebuild()
+SupernetworkParameters.model_rebuild()
+WaterbodyParameters.model_rebuild()
+LevelPool.model_rebuild()
 

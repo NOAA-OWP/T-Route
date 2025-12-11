@@ -172,6 +172,8 @@ cpdef object compute_network_structured(
     const float[:,:] data_values,
     const float[:,:] initial_conditions,
     const float[:,:] qlat_values,
+    const float[:,:] eloss_values,
+    float ssout,
     list lake_numbers_col,
     const double[:,:] wbody_cols,
     dict data_assimilation_parameters,
@@ -199,6 +201,13 @@ cpdef object compute_network_structured(
     const float[:] reservoir_usace_prev_persisted_flow,
     const float[:] reservoir_usace_persistence_update_time,
     const float[:] reservoir_usace_persistence_index,
+    const float[:,:] reservoir_usbr_obs,
+    const int[:] reservoir_usbr_wbody_idx,
+    const float[:] reservoir_usbr_time,
+    const float[:] reservoir_usbr_update_time,
+    const float[:] reservoir_usbr_prev_persisted_flow,
+    const float[:] reservoir_usbr_persistence_update_time,
+    const float[:] reservoir_usbr_persistence_index,
     const float[:,:] reservoir_rfc_obs,
     const int[:] reservoir_rfc_wbody_idx,
     const int[:] reservoir_rfc_totalCounts,
@@ -255,6 +264,7 @@ cpdef object compute_network_structured(
     cdef np.ndarray[float, ndim=2] data_array = np.asarray(data_values)
     cdef np.ndarray[float, ndim=2] init_array = np.asarray(initial_conditions)
     cdef np.ndarray[float, ndim=2] qlat_array = np.asarray(qlat_values)
+    cdef np.ndarray[float, ndim=2] eloss_array = np.asarray(eloss_values)
     cdef np.ndarray[double, ndim=2] wbody_parameters = np.asarray(wbody_cols)
     ###### Declare/type variables #####
     # Source columns
@@ -312,10 +322,11 @@ cpdef object compute_network_structured(
             else:
                 # Check whether to use the fortran or python RFC DA module:
                 if from_files:
-                    # If reservoir_type is 1, 2, or 3, then initialize Levelpool reservoir
+                    # If reservoir_type is 1, 2, 3, or 7 then initialize Levelpool reservoir
                     # reservoir_type 1 is a straight levelpool reservoir.
                     # reservoir_types 2 and 3 are USGS and USACE Hybrid reservoirs, respectively.
-                    if (reservoir_types[wbody_index][0] >= 1 and reservoir_types[wbody_index][0] <= 3):
+                    # reseroir_types 7 are USBR reservoirs
+                    if (reservoir_types[wbody_index][0] >= 1 and (reservoir_types[wbody_index][0] <= 3 or reservoir_types[wbody_index][0] == 7)):
                                             
                         # Initialize levelpool reservoir object
                         lp_obj =  MC_Levelpool(
@@ -414,24 +425,29 @@ cpdef object compute_network_structured(
     # reservoir id index arrays
     cdef np.ndarray[int, ndim=1] usgs_idx  = np.asarray(reservoir_usgs_wbody_idx)
     cdef np.ndarray[int, ndim=1] usace_idx = np.asarray(reservoir_usace_wbody_idx)
+    cdef np.ndarray[int, ndim=1] usbr_idx = np.asarray(reservoir_usbr_wbody_idx)
     cdef np.ndarray[int, ndim=1] rfc_idx = np.asarray(reservoir_rfc_wbody_idx)
-    
+
     # reservoir update time arrays
     cdef np.ndarray[float, ndim=1] usgs_update_time  = np.asarray(reservoir_usgs_update_time)
     cdef np.ndarray[float, ndim=1] usace_update_time = np.asarray(reservoir_usace_update_time)
+    cdef np.ndarray[float, ndim=1] usbr_update_time = np.asarray(reservoir_usbr_update_time)
     cdef np.ndarray[float, ndim=1] rfc_update_time = np.asarray(reservoir_rfc_update_time)
-    
+
     # reservoir persisted outflow arrays
     cdef np.ndarray[float, ndim=1] usgs_prev_persisted_ouflow  = np.asarray(reservoir_usgs_prev_persisted_flow)
     cdef np.ndarray[float, ndim=1] usace_prev_persisted_ouflow = np.asarray(reservoir_usace_prev_persisted_flow)  
-    
+    cdef np.ndarray[float, ndim=1] usbr_prev_persisted_ouflow = np.asarray(reservoir_usbr_prev_persisted_flow)  
+
     # reservoir persistence index update time arrays
     cdef np.ndarray[float, ndim=1] usgs_persistence_update_time  = np.asarray(reservoir_usgs_persistence_update_time)
     cdef np.ndarray[float, ndim=1] usace_persistence_update_time = np.asarray(reservoir_usace_persistence_update_time)
-    
+    cdef np.ndarray[float, ndim=1] usbr_persistence_update_time = np.asarray(reservoir_usbr_persistence_update_time)
+
     # reservoir persisted outflow period index
     cdef np.ndarray[float, ndim=1] usgs_prev_persistence_index  = np.asarray(reservoir_usgs_persistence_index)
     cdef np.ndarray[float, ndim=1] usace_prev_persistence_index = np.asarray(reservoir_usace_persistence_index)
+    cdef np.ndarray[float, ndim=1] usbr_prev_persistence_index = np.asarray(reservoir_usbr_persistence_index)
     cdef np.ndarray[int, ndim=1] rfc_timeseries_idx             = np.asarray(reservoir_rfc_timeseries_idx)
 
     # great lakes arrays
@@ -575,9 +591,22 @@ cpdef object compute_network_structured(
                         persistence_update_time = usace_persistence_update_time[res_idx[0][0]] 
                         persistence_index       = usace_prev_persistence_index[res_idx[0][0]]
                         update_time             = usace_update_time[res_idx[0][0]] 
+
+                    # USBR reservoir hybrid DA inputs
+                    if r.reach.lp.wbody_type_code == 7:
+                        # find index location of waterbody in reservoir_usbr_obs 
+                        # and reservoir_usbr_time
+                        res_idx = np.where(usbr_idx == r.reach.lp.lake_number)
+                        wbody_gage_obs          = reservoir_usbr_obs[res_idx[0][0],:]
+                        wbody_gage_time         = reservoir_usbr_time
+                        prev_persisted_outflow  = usbr_prev_persisted_ouflow[res_idx[0][0]]
+                        persistence_update_time = usbr_persistence_update_time[res_idx[0][0]] 
+                        persistence_index       = usbr_prev_persistence_index[res_idx[0][0]]
+                        update_time             = usbr_update_time[res_idx[0][0]] 
+
                         
-                    # Execute reservoir DA - both USGS(2) and USACE(3) types
-                    if r.reach.lp.wbody_type_code == 2 or r.reach.lp.wbody_type_code == 3:
+                    # Execute reservoir DA - both USGS(2), USACE(3), or USBR(7) types
+                    if r.reach.lp.wbody_type_code == 2 or r.reach.lp.wbody_type_code == 3 or r.reach.lp.wbody_type_code == 7:
                         
                         #print('***********************************************************')
                         #print('calling reservoir DA code for lake_id:', r.reach.lp.lake_number) 
@@ -634,7 +663,13 @@ cpdef object compute_network_structured(
                         usace_prev_persisted_ouflow[res_idx[0][0]]   = new_persisted_outflow
                         usace_prev_persistence_index[res_idx[0][0]]  = new_persistence_index
                         usace_persistence_update_time[res_idx[0][0]] = new_persistence_update_time
-
+                    
+                    # update USBR DA reservoir state arrays
+                    if r.reach.lp.wbody_type_code == 7:
+                        usbr_update_time[res_idx[0][0]]             = new_update_time
+                        usbr_prev_persisted_ouflow[res_idx[0][0]]   = new_persisted_outflow
+                        usbr_prev_persistence_index[res_idx[0][0]]  = new_persistence_index
+                        usbr_persistence_update_time[res_idx[0][0]] = new_persistence_update_time
 
                     # RFC reservoir hybrid DA inputs
                     if r.reach.lp.wbody_type_code == 4:
@@ -742,12 +777,19 @@ cpdef object compute_network_structured(
                 #Copy the output out
                 for _i in range(r.reach.mc_reach.num_segments):
                     segment = get_mc_segment(r, _i)
-                    flowveldepth[segment.id, timestep, 0] = out_buf[_i, 0]
+
+                    # Setting flow based on the output of MC - SSOUT - ELOSS
+                    flowveldepth[segment.id, timestep, 0] = out_buf[_i, 0] - ssout - eloss_array[segment.id, <int>((timestep-1)/qts_subdivisions)]
+
                     if reach_has_gage[i] == da_check_gage:
                         printf("segment.id: %ld\t", segment.id)
                         printf("segment.id: %d\t", usgs_positions[reach_has_gage[i]])
                     flowveldepth[segment.id, timestep, 1] = out_buf[_i, 1]
                     flowveldepth[segment.id, timestep, 2] = out_buf[_i, 2]
+
+                    # Ensuring flow does not go negative
+                    if flowveldepth[segment.id, timestep, 0] <= 0.0:
+                        flowveldepth[segment.id, timestep, 0] = 0.0
 
             # For each reach,
             # at the end of flow calculation, Check if there is something to assimilate
@@ -829,6 +871,12 @@ cpdef object compute_network_structured(
             usace_prev_persisted_ouflow, 
             usace_prev_persistence_index, 
             usace_persistence_update_time-((timestep-1)*dt)
+        ), 
+        (
+            usbr_idx, usbr_update_time-((timestep-1)*dt), 
+            usbr_prev_persisted_ouflow, 
+            usbr_prev_persistence_index, 
+            usbr_persistence_update_time-((timestep-1)*dt)
         ), 
         output_upstream.reshape(output.shape[0], -1)[fill_index_mask], 
         (
