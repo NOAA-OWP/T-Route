@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include "logger.h"
 #include "../../reach_structs.h"
 #include <stdio.h>
 /* RFC Reservoir Interface */
@@ -51,8 +52,7 @@ void init_rfc_reach(_Reach* reach, int lake_number,
 
     if(water_elevation < -900000000){
       //Equation below is used in wrf-hydro
-      printf("WARNING: RFC RESERVOIR USING COLDSTART WATER ELEVATION\n");
-      fflush(stdout);
+      Log(WARNING, "RFC RESERVOIR USING COLDSTART WATER ELEVATION");
       reach->reach.rfc.water_elevation = orifice_elevation + ((max_depth - orifice_elevation) * initial_fractional_depth);
     }
     else{

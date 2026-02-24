@@ -14,9 +14,8 @@ import pyarrow.parquet as pq
 
 import troute.nhd_io as nhd_io
 
-
-LOG = logging.getLogger('')
-
+from troute_ewts import MODULE_NAME
+LOG = logging.getLogger(MODULE_NAME)
 
 def build_da_sets(da_params, run_sets, t0):
     """

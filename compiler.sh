@@ -11,6 +11,7 @@ build_framework=true
 build_routing=true
 build_config=true
 build_nwm=true
+build_bmi=true
 
 if [ -z "$F90" ]
 then
@@ -52,6 +53,7 @@ else
 fi
 echo "using NETCDFINC=${NETCDFINC}"
 
+
 if  [[ "$build_mc_kernel" == true ]]; then
   #building reach and resevoir kernel files .o
   cd $REPOROOT/src/kernel/muskingum/
@@ -81,6 +83,13 @@ if [[ "$build_reservoir_kernel" == true ]]; then
   make install_lp || exit
   make install_rfc || exit
 
+fi
+
+cd $REPOROOT/src/troute_ewts
+if [[ ${WITH_EDITABLE} == true ]]; then
+  pip install --editable . || exit
+else
+  pip install . || exit
 fi
 
 if [[ "$build_framework" == true ]]; then
@@ -120,6 +129,15 @@ fi
 if [[ "$build_nwm" == true ]]; then
   #updates troute package with the execution script
   cd $REPOROOT/src/troute-nwm
+  if [[ ${WITH_EDITABLE} == true ]]; then
+    pip install --editable . || exit
+  else
+    pip install . || exit
+  fi
+fi
+
+if [[ "$build_bmi" == true ]]; then
+  cd $REPOROOT/src/troute-bmi
   if [[ ${WITH_EDITABLE} == true ]]; then
     pip install --editable . || exit
   else

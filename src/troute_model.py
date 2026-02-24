@@ -3,11 +3,12 @@ import numpy as np
 import yaml
 import time
 
-from nwm_routing.log_level_set import log_level_set
 from troute.config import Config
 import nwm_routing.__main__ as tr
 
 from troute.network import bmi_array2df as a2df
+
+from troute_ewts import configure_logging
 
 class troute_model():
 
@@ -440,8 +441,8 @@ def _read_config_file(custom_input_file): #TODO: Update this function, I dont' t
     parity_parameters = output_parameters.get('wrf_hydro_parity_check')
     data_assimilation_parameters = compute_parameters.get('data_assimilation_parameters')
 
-    # configure python logger
-    log_level_set(log_parameters)
+    # Configure NGWPC python logger (log_parameters not needed)
+    configure_logging()
 
     return (
         log_parameters,
