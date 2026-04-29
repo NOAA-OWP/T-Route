@@ -6,10 +6,10 @@ import yaml
 
 import troute.nhd_io as nhd_io
 import troute.nhd_network_utilities_v02 as nnu
-from .log_level_set import log_level_set
 from troute.config import Config
 
-LOG = logging.getLogger('')
+import ewts
+LOG = ewts.get_logger(ewts.T_ROUTE_ID)
 
 def _input_handler_v04(args):
     '''
@@ -59,9 +59,6 @@ def _input_handler_v04(args):
     parity_parameters = output_parameters.get('wrf_hydro_parity_check')
     data_assimilation_parameters = compute_parameters.get('data_assimilation_parameters')
     
-    # configure python logger
-    log_level_set(log_parameters)
-
     return (
         log_parameters,
         preprocessing_parameters,
@@ -118,12 +115,8 @@ def _input_handler_v03(args):
         data_assimilation_parameters,
     ) = nhd_io.read_config_file(custom_input_file)
 
-    # configure python logger
-    log_level_set(log_parameters)
-    LOG = logging.getLogger('')
-
     # if log level is at or below DEBUG, then check user inputs
-    if LOG.level <= 10: # DEBUG
+    if LOG.isEnabledFor(logging.DEBUG):
         check_inputs(
                 log_parameters,
                 preprocessing_parameters,
@@ -541,6 +534,16 @@ def check_inputs(
     #-----------------------------------------------------------------
     # Checking output settings
     #----------------------------------------------------------------- 
+    if output_parameters.get('lakeout_output', None):
+        LOG.info(f"lakeout_output '{p}' requsted")
+        
+        p = output_parameters.get('lakeout_output', None)
+        lakeout_path = Path(p).resolve()
+        if lakeout_path.exists():
+            LOG.debug(f"lakeout_output '{p}'folder exists: {lakeout_path}")
+        else:
+            LOG.warning(f"lakeout_output '{p}' folder does not exist: {lakeout_path}")
+
     if output_parameters.get('csv_output', None):
         
         if output_parameters['csv_output'].get('csv_output_folder', None):

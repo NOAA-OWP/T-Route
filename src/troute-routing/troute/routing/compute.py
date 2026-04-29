@@ -1,6 +1,8 @@
+from __future__ import annotations
 from collections import defaultdict
 from itertools import chain
 from functools import partial
+from typing import Literal, TYPE_CHECKING, Iterable
 from joblib import delayed, Parallel
 from datetime import datetime, timedelta
 import time
@@ -15,8 +17,13 @@ import troute.routing.diffusive_utils_v02 as diff_utils
 from troute.routing.fast_reach import diffusive
 
 import logging
+import ewts
+LOG = ewts.get_logger(ewts.T_ROUTE_ID)
 
-LOG = logging.getLogger('')
+if TYPE_CHECKING:
+    from typing import Annotated
+    from numpy.typing import NDArray
+
 
 _compute_func_map = defaultdict(
     compute_network_structured,
@@ -143,6 +150,8 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
                                   reservoir_usgs_param_df,
                                   reservoir_usace_df,
                                   reservoir_usace_param_df,
+                                  reservoir_usbr_df,
+                                  reservoir_usbr_param_df,
                                   reservoir_rfc_df,
                                   reservoir_rfc_param_df,
                                   great_lakes_df,
@@ -161,6 +170,8 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
     reservoir_usgs_param_df  (DataFrame): USGS reservoir DA state parameters
     reservoir_usace_df       (DataFrame): gage flow observations at USACE-type reservoirs
     reservoir_usace_param_df (DataFrame): USACE reservoir DA state parameters
+    reservoir_usbr_df       (DataFrame): gage flow observations at USBR-type reservoirs
+    reservoir_usbr_param_df (DataFrame): USBR reservoir DA state parameters
     reservoir_rfc_df         (DataFrame): gage flow observations and forecasts at RFC-type reservoirs
     reservoir_rfc_param_df   (DataFrame): RFC reservoir DA state parameters
     waterbody_types_df_sub   (DataFrame): type-codes for waterbodies in sub domain
@@ -181,7 +192,12 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
     reservoir_usace_prev_persisted_flow     (ndarray): previously persisted outflow rates at USACE reservoirs
     reservoir_usace_persistence_update_time (ndarray): update time (sec) of persisted value at USACE reservoirs
     reservoir_usace_persistence_index       (ndarray): index denoting elapsed persistence epochs at USACE reservoirs
-
+    reservoir_usbr_df_sub                (DataFrame): gage flow observations for USBR-type reservoirs in sub domain
+    reservoir_usbr_df_time                 (ndarray): time in seconds from model initialization time
+    reservoir_usbr_update_time             (ndarray): update time (sec) to search for new observation at USBR reservoirs
+    reservoir_usbr_prev_persisted_flow     (ndarray): previously persisted outflow rates at USBR reservoirs
+    reservoir_usbr_persistence_update_time (ndarray): update time (sec) of persisted value at USBR reservoirs
+    reservoir_usbr_persistence_index       (ndarray): index denoting elapsed persistence epochs at USBR reservoirs
     '''
     if not reservoir_usgs_df.empty:
         usgs_wbodies_sub      = waterbody_types_df_sub[
@@ -233,6 +249,32 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
         reservoir_usace_persistence_index = pd.DataFrame().to_numpy().reshape(0,)
         if not waterbody_types_df_sub.empty:
             waterbody_types_df_sub.loc[waterbody_types_df_sub['reservoir_type'] == 3] = 1
+
+    # select USBR reservoir DA data waterbodies in sub-domain
+    if not reservoir_usbr_df.empty:
+        usbr_wbodies_sub      = waterbody_types_df_sub[
+                                    waterbody_types_df_sub['reservoir_type']==7
+                                ].index
+        if exclude_segments:
+            usbr_wbodies_sub = list(set(usbr_wbodies_sub).difference(set(exclude_segments)))
+        reservoir_usbr_df_sub = reservoir_usbr_df.loc[usbr_wbodies_sub]
+        reservoir_usbr_df_time = []
+        for timestamp in reservoir_usbr_df.columns:
+            reservoir_usbr_df_time.append((timestamp - t0).total_seconds())
+        reservoir_usbr_df_time = np.array(reservoir_usbr_df_time)
+        reservoir_usbr_update_time = reservoir_usbr_param_df['update_time'].loc[usbr_wbodies_sub].to_numpy()
+        reservoir_usbr_prev_persisted_flow = reservoir_usbr_param_df['prev_persisted_outflow'].loc[usbr_wbodies_sub].to_numpy()
+        reservoir_usbr_persistence_update_time = reservoir_usbr_param_df['persistence_update_time'].loc[usbr_wbodies_sub].to_numpy()
+        reservoir_usbr_persistence_index = reservoir_usbr_param_df['persistence_index'].loc[usbr_wbodies_sub].to_numpy()
+    else: 
+        reservoir_usbr_df_sub = pd.DataFrame()
+        reservoir_usbr_df_time = pd.DataFrame().to_numpy().reshape(0,)
+        reservoir_usbr_update_time = pd.DataFrame().to_numpy().reshape(0,)
+        reservoir_usbr_prev_persisted_flow = pd.DataFrame().to_numpy().reshape(0,)
+        reservoir_usbr_persistence_update_time = pd.DataFrame().to_numpy().reshape(0,)
+        reservoir_usbr_persistence_index = pd.DataFrame().to_numpy().reshape(0,)
+        if not waterbody_types_df_sub.empty:
+            waterbody_types_df_sub.loc[waterbody_types_df_sub['reservoir_type'] == 7] = 1
     
     # RFC reservoirs
     if not reservoir_rfc_df.empty:
@@ -289,6 +331,7 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
     return (
         reservoir_usgs_df_sub, reservoir_usgs_df_time, reservoir_usgs_update_time, reservoir_usgs_prev_persisted_flow, reservoir_usgs_persistence_update_time, reservoir_usgs_persistence_index,
         reservoir_usace_df_sub, reservoir_usace_df_time, reservoir_usace_update_time, reservoir_usace_prev_persisted_flow, reservoir_usace_persistence_update_time, reservoir_usace_persistence_index,
+        reservoir_usbr_df_sub, reservoir_usbr_df_time, reservoir_usbr_update_time, reservoir_usbr_prev_persisted_flow, reservoir_usbr_persistence_update_time, reservoir_usbr_persistence_index,
         reservoir_rfc_df_sub, reservoir_rfc_totalCounts, reservoir_rfc_file, reservoir_rfc_use_forecast, reservoir_rfc_timeseries_idx, reservoir_rfc_update_time, reservoir_rfc_da_timestep, reservoir_rfc_persist_days,
         gl_df_sub, gl_parm_lake_id_sub, gl_param_flows_sub, gl_param_time_sub, gl_param_update_time_sub, gl_climatology_df_sub,
         waterbody_types_df_sub
@@ -319,6 +362,8 @@ def compute_log_mc(
     reservoir_usgs_param_df,
     reservoir_usace_df,
     reservoir_usace_param_df,
+    reservoir_usbr_df,
+    reservoir_usbr_param_df,
     reservoir_rfc_df,
     reservoir_rfc_param_df,
     assume_short_ts,
@@ -381,6 +426,9 @@ def compute_log_mc(
             outPutStr = "Reservoir persistence USACE: "+str(data_assimilation_parameters['reservoir_da']['reservoir_persistence_da']['reservoir_persistence_usace'])
             preRunLog.write(outPutStr+'\n')
             LOG.info(outPutStr)
+            outPutStr = "Reservoir persistence USBR: "+str(data_assimilation_parameters['reservoir_da']['reservoir_persistence_da']['reservoir_persistence_usbr'])
+            preRunLog.write(outPutStr+'\n')
+            LOG.info(outPutStr)
             preRunLog.write("Reservoir RFC forecasts: "+str(data_assimilation_parameters['reservoir_da']['reservoir_rfc_da']['reservoir_rfc_forecasts'])+'\n')
 
         preRunLog.write("\n")                   
@@ -408,6 +456,7 @@ def compute_log_mc(
         preRunLog.write("Lastobs files, number of gages: "+str(len(lastobs_df.index))+'\n')
         preRunLog.write("Number of USGS gages in waterbodies: "+str(len(reservoir_usgs_df.index))+'\n')
         preRunLog.write("Number of USACE gages in waterbodies: "+str(len(reservoir_usace_df.index))+'\n')
+        preRunLog.write("Number of USBR gages in waterbodies: "+str(len(reservoir_usbr_df.index))+'\n')
         preRunLog.write("Number of RFC gages in waterbodies: "+str(len(reservoir_rfc_df.index))+'\n')
         preRunLog.write("\n")        
 
@@ -521,12 +570,16 @@ def compute_nhd_routing_v02(
     param_df,
     q0,
     qlats,
+    eloss_df,
+    ssout,
     usgs_df,
     lastobs_df,
     reservoir_usgs_df,
     reservoir_usgs_param_df,
     reservoir_usace_df,
     reservoir_usace_param_df,
+    reservoir_usbr_df,
+    reservoir_usbr_param_df,
     reservoir_rfc_df,
     reservoir_rfc_param_df,
     great_lakes_df,
@@ -542,6 +595,7 @@ def compute_nhd_routing_v02(
     subnetwork_list,
     flowveldepth_interorder = {},
     from_files = True,
+    qlat_add_loc: Literal["top", "middle", "bottom"] = "middle",
 ):
 
     da_decay_coefficient = da_parameter_dict.get("da_decay_coefficient", 0)
@@ -550,6 +604,14 @@ def compute_nhd_routing_v02(
     
     start_time = time.time()
     compute_func = _compute_func_map[compute_func_name]
+    if qlat_add_loc == "top":
+        qlat_add_loc_c = 0
+    elif qlat_add_loc == "middle":
+        qlat_add_loc_c = 1
+    elif qlat_add_loc == "bottom":
+        qlat_add_loc_c = 2
+    else:
+        raise ValueError(f"qlat_add_loc was {qlat_add_loc}, but must be one of 'top', 'middle', or 'bottom'")
     if parallel_compute_method == "by-subnetwork-jit-clustered":
         
         # Create subnetwork objects if they have not already been created
@@ -663,7 +725,6 @@ def compute_nhd_routing_v02(
         # if 1 == 1:
         with Parallel(n_jobs=cpu_pool, backend="loky") as parallel:
             results_subn = defaultdict(list)
-            flowveldepth_interorder = {}
 
             for order in range(max(subnetworks_only_ordered_jit.keys()), -1, -1):
                 jobs = []
@@ -671,6 +732,7 @@ def compute_nhd_routing_v02(
                     order
                 ].items():
                     segs = clustered_subns["segs"]
+
                     offnetwork_upstreams = set()
                     segs_set = set(segs)
                     for seg in segs:
@@ -679,10 +741,10 @@ def compute_nhd_routing_v02(
                                 offnetwork_upstreams.add(us)
 
                     segs.extend(offnetwork_upstreams)
-                    
+
                     common_segs = list(param_df.index.intersection(segs))
                     wbodies_segs = set(segs).symmetric_difference(common_segs)
-                    
+
                     #Declare empty dataframe
                     waterbody_types_df_sub = pd.DataFrame()
 
@@ -704,7 +766,7 @@ def compute_nhd_routing_v02(
                                 "h0",
                             ],
                         ]
-                        
+
                         #If reservoir types other than Level Pool are active
                         if not waterbody_types_df.empty:
                             waterbody_types_df_sub = waterbody_types_df.loc[
@@ -722,27 +784,29 @@ def compute_nhd_routing_v02(
                         common_segs,
                         ["dt", "bw", "tw", "twcc", "dx", "n", "ncc", "cs", "s0", "alt"],
                     ].sort_index()
-                    
+
                     param_df_sub_super = param_df_sub.reindex(
                         param_df_sub.index.tolist() + lake_segs
                     ).sort_index()
-                    
-                    if order < max(subnetworks_only_ordered_jit.keys()):
-                        for us_subn_tw in offnetwork_upstreams:
+
+                    for us_subn_tw in offnetwork_upstreams:
+                        if us_subn_tw in flowveldepth_interorder:
                             subn_tw_sortposition = param_df_sub_super.index.get_loc(
                                 us_subn_tw
                             )
                             flowveldepth_interorder[us_subn_tw][
                                 "position_index"
                             ] = subn_tw_sortposition
-   
+
                     subn_reach_list = clustered_subns["subn_reach_list"]
+
                     upstreams = clustered_subns["upstreams"]
 
                     subn_reach_list_with_type = _build_reach_type_list(subn_reach_list, wbodies_segs)
 
                     qlat_sub = qlats.loc[param_df_sub.index]
                     q0_sub = q0.loc[param_df_sub.index]
+                    eloss_sub = eloss_df.loc[param_df_sub.index]
                                         
                     param_df_sub = param_df_sub.reindex(
                         param_df_sub.index.tolist() + lake_segs
@@ -753,6 +817,7 @@ def compute_nhd_routing_v02(
 
                     qlat_sub = qlat_sub.reindex(param_df_sub.index)
                     q0_sub = q0_sub.reindex(param_df_sub.index)
+                    eloss_sub = eloss_sub.reindex(param_df_sub.index)
 
                     # prepare reservoir DA data
                     (reservoir_usgs_df_sub, 
@@ -767,6 +832,12 @@ def compute_nhd_routing_v02(
                      reservoir_usace_prev_persisted_flow,
                      reservoir_usace_persistence_update_time,
                      reservoir_usace_persistence_index,
+                     reservoir_usbr_df_sub, 
+                     reservoir_usbr_df_time,
+                     reservoir_usbr_update_time,
+                     reservoir_usbr_prev_persisted_flow,
+                     reservoir_usbr_persistence_update_time,
+                     reservoir_usbr_persistence_index,
                      reservoir_rfc_df_sub, 
                      reservoir_rfc_totalCounts, 
                      reservoir_rfc_file, 
@@ -787,6 +858,8 @@ def compute_nhd_routing_v02(
                         reservoir_usgs_param_df,
                         reservoir_usace_df, 
                         reservoir_usace_param_df,
+                        reservoir_usbr_df,
+                        reservoir_usbr_param_df,
                         reservoir_rfc_df,
                         reservoir_rfc_param_df,
                         great_lakes_df,
@@ -812,6 +885,8 @@ def compute_nhd_routing_v02(
                             param_df_sub.values,
                             q0_sub.values.astype("float32"),
                             qlat_sub.values.astype("float32"),
+                            eloss_sub.values.astype("float32"),
+                            ssout,
                             lake_segs, 
                             waterbodies_df_sub.values,
                             data_assimilation_parameters,
@@ -848,6 +923,14 @@ def compute_nhd_routing_v02(
                             reservoir_usace_prev_persisted_flow.astype("float32"),
                             reservoir_usace_persistence_update_time.astype("float32"),
                             reservoir_usace_persistence_index.astype("float32"),
+                            # USBR Hybrid Reservoir DA data
+                            reservoir_usbr_df_sub.values.astype("float32"),
+                            reservoir_usbr_df_sub.index.values.astype("int32"),
+                            reservoir_usbr_df_time.astype("float32"),
+                            reservoir_usbr_update_time.astype("float32"),
+                            reservoir_usbr_prev_persisted_flow.astype("float32"),
+                            reservoir_usbr_persistence_update_time.astype("float32"),
+                            reservoir_usbr_persistence_index.astype("float32"),
                             # RFC Reservoir DA data
                             reservoir_rfc_df_sub.values.astype("float32"),
                             reservoir_rfc_df_sub.index.values.astype("int32"),
@@ -875,12 +958,12 @@ def compute_nhd_routing_v02(
                             assume_short_ts,
                             return_courant,
                             from_files = from_files,
+                            qlat_add_loc = qlat_add_loc_c
                         )
                     )
                 results_subn[order] = parallel(jobs)
    
                 if order > 0:  # This is not needed for the last rank of subnetworks
-                    flowveldepth_interorder = {}
                     for ci, (cluster, clustered_subns) in enumerate(
                         reaches_ordered_bysubntw_clustered[order].items()
                     ):
@@ -970,7 +1053,10 @@ def compute_nhd_routing_v02(
         start_para_time = time.time()
         with Parallel(n_jobs=cpu_pool, backend="loky") as parallel:
             results_subn = defaultdict(list)
-            flowveldepth_interorder = {}
+            # Preserve any pre-populated entries (e.g., upstream inflow
+            # virtual segments from NHF catchment discharge routing).
+            _prepopulated_fvd = dict(flowveldepth_interorder)
+            flowveldepth_interorder = dict(_prepopulated_fvd)
 
             for order in range(max(subnetworks_only_ordered_jit.keys()), -1, -1):
                 jobs = []
@@ -980,6 +1066,19 @@ def compute_nhd_routing_v02(
                     # TODO: Confirm that a list here is best -- we are sorting,
                     # so a set might be sufficient/better
                     segs = list(chain.from_iterable(subn_reach_list))
+
+                    # Identify virtual segments (those with pre-filled FVD
+                    # data) that were absorbed into this subnetwork.
+                    fvd_keys = set(flowveldepth_interorder.keys())
+                    cluster_virtual_segs = fvd_keys & set(segs)
+                    if cluster_virtual_segs:
+                        segs = [s for s in segs if s not in cluster_virtual_segs]
+                        subn_reach_list = [
+                            [s for s in reach if s not in cluster_virtual_segs]
+                            for reach in subn_reach_list
+                        ]
+                        subn_reach_list = [r for r in subn_reach_list if r]
+
                     offnetwork_upstreams = set()
                     segs_set = set(segs)
                     for seg in segs:
@@ -987,14 +1086,15 @@ def compute_nhd_routing_v02(
                             if us not in segs_set:
                                 offnetwork_upstreams.add(us)
 
+                    offnetwork_upstreams |= cluster_virtual_segs
                     segs.extend(offnetwork_upstreams)
-                    
+
                     common_segs = list(param_df.index.intersection(segs))
                     wbodies_segs = set(segs).symmetric_difference(common_segs)
-                    
+
                     #Declare empty dataframe
                     waterbody_types_df_sub = pd.DataFrame()
-                
+
                     if not waterbodies_df.empty:
                         lake_segs = list(waterbodies_df.index.intersection(segs))
                         waterbodies_df_sub = waterbodies_df.loc[
@@ -1013,7 +1113,7 @@ def compute_nhd_routing_v02(
                                 "h0",
                             ],
                         ]
-                        
+
                         #If reservoir types other than Level Pool are active
                         if not waterbody_types_df.empty:
                             waterbody_types_df_sub = waterbody_types_df.loc[
@@ -1026,18 +1126,18 @@ def compute_nhd_routing_v02(
                     else:
                         lake_segs = []
                         waterbodies_df_sub = pd.DataFrame()
-                    
+
                     param_df_sub = param_df.loc[
                         common_segs,
                         ["dt", "bw", "tw", "twcc", "dx", "n", "ncc", "cs", "s0", "alt"],
                     ].sort_index()
-                    
+
                     param_df_sub_super = param_df_sub.reindex(
                         param_df_sub.index.tolist() + lake_segs
                     ).sort_index()
-                    
-                    if order < max(subnetworks_only_ordered_jit.keys()):
-                        for us_subn_tw in offnetwork_upstreams:
+
+                    for us_subn_tw in offnetwork_upstreams:
+                        if us_subn_tw in flowveldepth_interorder:
                             subn_tw_sortposition = param_df_sub_super.index.get_loc(
                                 us_subn_tw
                             )
@@ -1073,6 +1173,12 @@ def compute_nhd_routing_v02(
                      reservoir_usace_prev_persisted_flow,
                      reservoir_usace_persistence_update_time,
                      reservoir_usace_persistence_index,
+                     reservoir_usbr_df_sub, 
+                     reservoir_usbr_df_time,
+                     reservoir_usbr_update_time,
+                     reservoir_usbr_prev_persisted_flow,
+                     reservoir_usbr_persistence_update_time,
+                     reservoir_usbr_persistence_index,
                      reservoir_rfc_df_sub, 
                      reservoir_rfc_totalCounts, 
                      reservoir_rfc_file, 
@@ -1093,6 +1199,8 @@ def compute_nhd_routing_v02(
                         reservoir_usgs_param_df,
                         reservoir_usace_df, 
                         reservoir_usace_param_df,
+                        reservoir_usbr_df, 
+                        reservoir_usbr_param_df,
                         reservoir_rfc_df,
                         reservoir_rfc_param_df,
                         great_lakes_df,
@@ -1116,6 +1224,8 @@ def compute_nhd_routing_v02(
                             param_df_sub.values,
                             q0_sub.values.astype("float32"),
                             qlat_sub.values.astype("float32"),
+                            eloss_sub.values.astype("float32"),
+                            ssout,
                             lake_segs,
                             waterbodies_df_sub.values,
                             data_assimilation_parameters,
@@ -1152,6 +1262,14 @@ def compute_nhd_routing_v02(
                             reservoir_usace_prev_persisted_flow.astype("float32"),
                             reservoir_usace_persistence_update_time.astype("float32"),
                             reservoir_usace_persistence_index.astype("float32"),
+                            # USBR Hybrid Reservoir DA data
+                            reservoir_usbr_df_sub.values.astype("float32"),
+                            reservoir_usbr_df_sub.index.values.astype("int32"),
+                            reservoir_usbr_df_time.astype('float32'),
+                            reservoir_usbr_update_time.astype("float32"),
+                            reservoir_usbr_prev_persisted_flow.astype("float32"),
+                            reservoir_usbr_persistence_update_time.astype("float32"),
+                            reservoir_usbr_persistence_index.astype("float32"),
                             # RFC Reservoir DA data
                             reservoir_rfc_df_sub.values.astype("float32"),
                             reservoir_rfc_df_sub.index.values.astype("int32"),
@@ -1179,13 +1297,15 @@ def compute_nhd_routing_v02(
                             assume_short_ts,
                             return_courant,
                             from_files=from_files,
+                            qlat_add_loc=qlat_add_loc_c
                         )
                     )
 
                 results_subn[order] = parallel(jobs)
 
                 if order > 0:  # This is not needed for the last rank of subnetworks
-                    flowveldepth_interorder = {}
+                    # Start with pre-populated entries (e.g., catchment inflow virtual segments)
+                    flowveldepth_interorder = dict(_prepopulated_fvd)
                     for twi, subn_tw in enumerate(reaches_ordered_bysubntw[order]):
                         # TODO: This index step is necessary because we sort the segment index
                         # TODO: I think there are a number of ways we could remove the sorting step
@@ -1294,6 +1414,12 @@ def compute_nhd_routing_v02(
                  reservoir_usace_prev_persisted_flow,
                  reservoir_usace_persistence_update_time,
                  reservoir_usace_persistence_index,
+                 reservoir_usbr_df_sub, 
+                 reservoir_usbr_df_time,
+                 reservoir_usbr_update_time,
+                 reservoir_usbr_prev_persisted_flow,
+                 reservoir_usbr_persistence_update_time,
+                 reservoir_usbr_persistence_index,
                  reservoir_rfc_df_sub, 
                  reservoir_rfc_totalCounts, 
                  reservoir_rfc_file, 
@@ -1314,6 +1440,8 @@ def compute_nhd_routing_v02(
                     reservoir_usgs_param_df,
                     reservoir_usace_df, 
                     reservoir_usace_param_df,
+                    reservoir_usbr_df, 
+                    reservoir_usbr_param_df,
                     reservoir_rfc_df,
                     reservoir_rfc_param_df,
                     great_lakes_df,
@@ -1337,6 +1465,8 @@ def compute_nhd_routing_v02(
                         param_df_sub.values,
                         q0_sub.values.astype("float32"),
                         qlat_sub.values.astype("float32"),
+                        eloss_sub.values.astype("float32"),
+                        ssout,
                         lake_segs,
                         waterbodies_df_sub.values,
                         data_assimilation_parameters,
@@ -1366,6 +1496,14 @@ def compute_nhd_routing_v02(
                         reservoir_usace_prev_persisted_flow.astype("float32"),
                         reservoir_usace_persistence_update_time.astype("float32"),
                         reservoir_usace_persistence_index.astype("float32"),
+                        # USBR Hybrid Reservoir DA data
+                        reservoir_usbr_df_sub.values.astype("float32"),
+                        reservoir_usbr_df_sub.index.values.astype("int32"),
+                        reservoir_usbr_df_time.astype('float32'),
+                        reservoir_usbr_update_time.astype("float32"),
+                        reservoir_usbr_prev_persisted_flow.astype("float32"),
+                        reservoir_usbr_persistence_update_time.astype("float32"),
+                        reservoir_usbr_persistence_index.astype("float32"),
                         # RFC Reservoir DA data
                         reservoir_rfc_df_sub.values.astype("float32"),
                         reservoir_rfc_df_sub.index.values.astype("int32"),
@@ -1479,6 +1617,12 @@ def compute_nhd_routing_v02(
              reservoir_usace_prev_persisted_flow,
              reservoir_usace_persistence_update_time,
              reservoir_usace_persistence_index,
+             reservoir_usbr_df_sub, 
+             reservoir_usbr_df_time,
+             reservoir_usbr_update_time,
+             reservoir_usbr_prev_persisted_flow,
+             reservoir_usbr_persistence_update_time,
+             reservoir_usbr_persistence_index,
              reservoir_rfc_df_sub, 
              reservoir_rfc_totalCounts, 
              reservoir_rfc_file, 
@@ -1499,6 +1643,8 @@ def compute_nhd_routing_v02(
                 reservoir_usgs_param_df,
                 reservoir_usace_df, 
                 reservoir_usace_param_df,
+                reservoir_usbr_df, 
+                reservoir_usbr_param_df,
                 reservoir_rfc_df,
                 reservoir_rfc_param_df,
                 great_lakes_df,
@@ -1521,6 +1667,8 @@ def compute_nhd_routing_v02(
                     param_df_sub.values,
                     q0_sub.values.astype("float32"),
                     qlat_sub.values.astype("float32"),
+                    eloss_sub.values.astype("float32"),
+                    ssout,
                     lake_segs,
                     waterbodies_df_sub.values,
                     data_assimilation_parameters,
@@ -1550,6 +1698,14 @@ def compute_nhd_routing_v02(
                     reservoir_usace_prev_persisted_flow.astype("float32"),
                     reservoir_usace_persistence_update_time.astype("float32"),
                     reservoir_usace_persistence_index.astype("float32"),
+                    # USBR Hybrid Reservoir DA data
+                    reservoir_usbr_df_sub.values.astype("float32"),
+                    reservoir_usbr_df_sub.index.values.astype("int32"),
+                    reservoir_usbr_df_time.astype('float32'),
+                    reservoir_usbr_update_time.astype("float32"),
+                    reservoir_usbr_prev_persisted_flow.astype("float32"),
+                    reservoir_usbr_persistence_update_time.astype("float32"),
+                    reservoir_usbr_persistence_index.astype("float32"),
                     # RFC Reservoir DA data
                     reservoir_rfc_df_sub.values.astype("float32"),
                     reservoir_rfc_df_sub.index.values.astype("int32"),
@@ -1673,12 +1829,20 @@ def compute_nhd_routing_v02(
              reservoir_usace_prev_persisted_flow,
              reservoir_usace_persistence_update_time,
              reservoir_usace_persistence_index,
+             reservoir_usbr_df_sub, 
+             reservoir_usbr_df_time,
+             reservoir_usbr_update_time,
+             reservoir_usbr_prev_persisted_flow,
+             reservoir_usbr_persistence_update_time,
+             reservoir_usbr_persistence_index,
              waterbody_types_df_sub,
              ) = _prep_reservoir_da_dataframes(
                 reservoir_usgs_df,
                 reservoir_usgs_param_df,
                 reservoir_usace_df, 
                 reservoir_usace_param_df,
+                reservoir_usbr_df, 
+                reservoir_usbr_param_df,
                 waterbody_types_df_sub, 
                 t0,
                 from_files,
@@ -1696,6 +1860,8 @@ def compute_nhd_routing_v02(
                     param_df_sub.values,
                     q0_sub.values.astype("float32"),
                     qlat_sub.values.astype("float32"),
+                    eloss_sub.values.astype("float32"),
+                    ssout,
                     lake_segs,
                     waterbodies_df_sub.values,
                     data_assimilation_parameters,
@@ -1725,6 +1891,14 @@ def compute_nhd_routing_v02(
                     reservoir_usace_prev_persisted_flow.astype("float32"),
                     reservoir_usace_persistence_update_time.astype("float32"),
                     reservoir_usace_persistence_index.astype("float32"),
+                    # USBR Hybrid Reservoir DA data
+                    reservoir_usbr_df_sub.values.astype("float32"),
+                    reservoir_usbr_df_sub.index.values.astype("int32"),
+                    reservoir_usbr_df_time.astype('float32'),
+                    reservoir_usbr_update_time.astype("float32"),
+                    reservoir_usbr_prev_persisted_flow.astype("float32"),
+                    reservoir_usbr_persistence_update_time.astype("float32"),
+                    reservoir_usbr_persistence_index.astype("float32"),
                     {
                         us: fvd
                         for us, fvd in flowveldepth_interorder.items()
@@ -1735,7 +1909,7 @@ def compute_nhd_routing_v02(
                 )
             )
 
-    return results, subnetwork_list
+    return RoutingResultsCollection(results), subnetwork_list
 
 def compute_diffusive_routing(
     results,
@@ -1882,3 +2056,317 @@ def compute_diffusive_routing(
         )
 
     return results_diffusive
+
+
+class _RoutingResultsParser:
+    def __init__(self, raw_results: tuple):
+        self._raw = raw_results
+
+    def __getitem__(self, index: int):
+        return self._raw[index]
+
+    def __iter__(self):
+        return iter(self._raw)
+
+    def __len__(self):
+        return len(self._raw)
+
+    @property
+    def ids(self) -> np.ndarray[tuple[int], np.intp]:
+        """Segment IDs as 1D array"""
+        return self._raw[0]
+
+    def _append(self, a: np.ndarray, b: np.ndarray):
+        axis = len(a.shape) - 1
+        return np.concatenate([a, b], axis=axis)
+
+    def append(self, other: _RoutingResultsParser):
+        copy = list(self)
+        # skip first element as that is the ID
+        for i in range(1, len(self)):
+            copy[i] = self._append(self[i], other[i])
+        return self.__class__(copy)
+
+    @classmethod
+    def merge(cls, to_merge: list[_RoutingResultsParser]):
+        size = len(to_merge[0])
+        data = [None] * size
+        for i in range(size):
+            data[i] = np.concatenate([r[i] for r in to_merge], axis=0)
+        return cls(data)
+
+    def align_ids(self, source: _RoutingResultsParser):
+        if self.ids.size and not np.array_equal(self.ids, source.ids):
+            copy = [None] * len(self)
+            sorter = np.argsort(source.ids)
+            for i, item in enumerate(self):
+                copy[i] = item[sorter]
+            return self.__class__(copy)
+        return self
+
+    def _set_index(self, value, index: int):
+        if isinstance(self._raw, tuple):
+            self._raw = list(self._raw)
+        self._raw[index] = value
+
+
+class RoutingResultsCollection:
+    def __init__(self, results: Iterable[tuple]):
+        self.results = [RoutingResults(r) for r in results]
+
+    def __getitem__(self, index: int):
+        return self.results[index]
+
+    def __iter__(self):
+        return iter(self.results)
+
+    def __len__(self):
+        return len(self.results)
+
+    def flow_velocity_depth(self, nts: int, drop_ql: bool = False):
+        columns = pd.MultiIndex.from_product(
+            [range(nts), ["q", "v", "d", "ql"]]
+        ).to_flat_index()
+        dfs = []
+        for result in self.results:
+            df = pd.DataFrame(
+                result.flow,
+                index=result.ids,
+                columns=columns,
+            )
+            dfs.append(df)
+        flowveldepth = pd.concat(dfs, copy=False)
+        if drop_ql:
+            flowveldepth = flowveldepth.drop(columns=[
+                col for col in flowveldepth.columns if col[1] == "ql"
+            ])
+        return flowveldepth
+
+    def waterbodies(self, nts: int):
+        columns = pd.MultiIndex.from_product(
+            [range(nts), ["i"]]
+        ).to_flat_index()
+        dfs = []
+        for result in self.results:
+            df = pd.DataFrame(
+                result.upstream,
+                index=result.ids,
+                columns=columns,
+            )
+            dfs.append(df)
+        return pd.concat(dfs, copy=False)
+
+    def courant(self, nts: int):
+        columns = pd.MultiIndex.from_product(
+            [range(nts), ["cn", "ck", "X"]]
+        ).to_flat_index()
+        dfs = []
+        for result in self.results:
+            df = pd.DataFrame(
+                result.courant,
+                index=result.ids,
+                columns=columns,
+            )
+            dfs.append(df)
+        return pd.concat(dfs, copy=False)
+
+    def nudge(self):
+        return np.concatenate(
+            [result.nudge for result in self.results]
+        )
+
+    def usgs_position_ids(self):
+        return np.concatenate(
+            [result.usgs_reservoir.ids for result in self.results]
+        )
+
+    def merged_results(self) -> RoutingResults:
+        """Merge the separate results into one single results."""
+        if len(self.results) > 1:
+            merged = RoutingResults([None] * len(self.results[0]))
+            merged.ids = np.concatenate([r.ids for r in self.results])
+            merged.flow = np.concatenate([r.flow for r in self.results], axis=0)
+            merged.courant = 0 # fix when this is no longer a placeholder
+            merged.lastobs = RoutingLastObs.merge([r.lastobs for r in self.results])
+            merged.usgs_reservoir = RoutingReservoir.merge([r.usgs_reservoir for r in self.results])
+            merged.usace_reservoir = RoutingReservoir.merge([r.usace_reservoir for r in self.results])
+            merged.usbr_reservoir = RoutingReservoir.merge([r.usbr_reservoir for r in self.results])
+            merged.upstream = np.concatenate([r.upstream for r in self.results], axis=0)
+            merged.rfc_reservoir = RoutingRfc.merge([r.rfc_reservoir for r in self.results])
+            merged.nudge = np.concatenate([r.nudge for r in self.results], axis=0)
+            merged.great_lakes = RoutingGreatLakes.merge([r.great_lakes for r in self.results])
+            return merged
+        return self.results[0]
+
+    def append_timesteps(self, other: RoutingResultsCollection):
+        a = self.merged_results()
+        b = other.merged_results()
+        b = b.align_ids(a)
+        return RoutingResultsCollection([a.append(b)])
+
+
+class RoutingResults(_RoutingResultsParser):
+    def align_ids(self, source: RoutingResults):
+        if not np.array_equal(self.ids, source.ids):
+            self = RoutingResults(list(self))
+            sorter = np.argsort(source.ids)
+            self.ids = self.ids[sorter]
+            self.flow = self.flow[sorter]
+            if self.upstream.size > 0:
+                self.upstream = self.upstream[sorter]
+            if self.nudge.size > 0:
+                self.nudge = self.nudge[sorter]
+        self.usgs_reservoir = self.usgs_reservoir.align_ids(source.usgs_reservoir)
+        self.usace_reservoir = self.usace_reservoir.align_ids(source.usace_reservoir)
+        self.usbr_reservoir = self.usbr_reservoir.align_ids(source.usbr_reservoir)
+        self.rfc_reservoir = self.rfc_reservoir.align_ids(source.rfc_reservoir)
+        self.great_lakes = self.great_lakes.align_ids(source.great_lakes)
+        return self
+
+    def append(self, other: RoutingResults):
+        appended = RoutingResults(list(self))
+        appended.flow = self._append(self.flow, other.flow)
+        appended.lastobs = self.lastobs.append(other.lastobs)
+        appended.usgs_reservoir = self.usgs_reservoir.append(other.usgs_reservoir)
+        appended.usace_reservoir = self.usace_reservoir.append(other.usace_reservoir)
+        appended.usbr_reservoir = self.usbr_reservoir.append(other.usbr_reservoir)
+        appended.upstream = self._append(self.upstream, other.upstream)
+        appended.rfc_reservoir = self.rfc_reservoir.append(other.rfc_reservoir)
+        # remove leading timestep from other's nudge
+        appended.nudge = self._append(self.nudge, other.nudge[:, 1:])
+        appended.great_lakes = self.great_lakes.append(other.great_lakes)
+        return appended
+
+    @property
+    def ids(self) -> np.ndarray[tuple[int], np.intp]:
+        """Catchment IDs as 1D array"""
+        return self._raw[0]
+    @ids.setter
+    def ids(self, value):
+        self._set_index(value, 0)
+
+    @property
+    def flow(self) -> np.ndarray[tuple[int], np.dtype[np.float32]]:
+        """Flow velocity depth 2D array: (num_ids, nts * 4)"""
+        return self._raw[1]
+    @flow.setter
+    def flow(self, value):
+        self._set_index(value, 1)
+
+    @property
+    def courant(self) -> Literal[0]:
+        """Is currently a placeholder, so the value will always be 0."""
+        return self._raw[2]
+    @courant.setter
+    def courant(self, value):
+        self._set_index(value, 2)
+
+    @property
+    def lastobs(self):
+        return RoutingLastObs(self._raw[3])
+    @lastobs.setter
+    def lastobs(self, value):
+        self._set_index(list(value), 3)
+
+    @property
+    def usgs_reservoir(self):
+        return RoutingReservoir(self._raw[4])
+    @usgs_reservoir.setter
+    def usgs_reservoir(self, value):
+        self._set_index(list(value), 4)
+
+    @property
+    def usace_reservoir(self):
+        return RoutingReservoir(self._raw[5])
+    @usace_reservoir.setter
+    def usace_reservoir(self, value):
+        self._set_index(list(value), 5)
+
+    @property
+    def usbr_reservoir(self):
+        return RoutingReservoir(self._raw[6])
+    @usbr_reservoir.setter
+    def usbr_reservoir(self, value):
+        self._set_index(list(value), 6)
+
+    @property
+    def upstream(self) -> np.ndarray[tuple[int], np.float32]:
+        """Upstream 2D array: (num_ids, nts)"""
+        return self._raw[7]
+    @upstream.setter
+    def upstream(self, value):
+        self._set_index(value, 7)
+
+    @property
+    def rfc_reservoir(self):
+        return RoutingRfc(self._raw[8])
+    @rfc_reservoir.setter
+    def rfc_reservoir(self, value):
+        self._set_index(value, 8)
+
+    @property
+    def nudge(self) -> np.ndarray[tuple[int, int], np.float32]:
+        """Nudge 2D array: (num_ids, nts + 1)"""
+        return self._raw[9]
+    @nudge.setter
+    def nudge(self, value):
+        self._set_index(value, 9)
+
+    @property
+    def great_lakes(self):
+        return RoutingGreatLakes(self._raw[10])
+    @great_lakes.setter
+    def great_lakes(self, value):
+        self._set_index(list(value), 10)
+
+
+class RoutingLastObs(_RoutingResultsParser):
+    @property
+    def times(self) -> np.ndarray[tuple[int], np.float32]:
+        return self._raw[1]
+
+    @property
+    def values(self) -> np.ndarray[tuple[int], np.float32]:
+        return self._raw[2]
+
+
+class RoutingReservoir(_RoutingResultsParser):
+    @property
+    def update_times(self) -> np.ndarray[tuple[int], np.float32]:
+        return self._raw[1]
+
+    @property
+    def persisted_outflow(self) -> np.ndarray[tuple[int], np.float32]:
+        return self._raw[2]
+
+    @property
+    def persistence_index(self) -> np.ndarray[tuple[int], np.float32]:
+        return self._raw[3]
+
+    @property
+    def persistence_update_time(self) -> np.ndarray[tuple[int], np.float32]:
+        return self._raw[4]
+
+
+class RoutingRfc(_RoutingResultsParser):
+    @property
+    def update_times(self) -> np.ndarray[tuple[int], np.float32]:
+        return self._raw[1]
+
+    @property
+    def timeseries(self) -> np.ndarray[tuple[int], np.intp]:
+        return self._raw[2]
+
+
+class RoutingGreatLakes(_RoutingResultsParser):
+    @property
+    def outflows(self) -> np.ndarray[tuple[int], np.float32]:
+        return self._raw[1]
+
+    @property
+    def timestamps(self) -> np.ndarray[tuple[int], np.intp]:
+        return self._raw[2]
+
+    @property
+    def update_times(self) -> np.ndarray[tuple[int], np.intp]:
+        return self._raw[3]

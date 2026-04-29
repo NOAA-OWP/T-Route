@@ -1,0 +1,28 @@
+{
+    "name": "troute dev container",
+	"build": {
+		"dockerfile": "../docker/Dockerfile.dev",
+		"context": "..",
+		"target": "dev"
+	},
+	"runArgs": ["--ulimit", "nofile=10000:10000"],
+	"workspaceFolder": "/t-route",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/t-route,type=bind",
+	"mounts": [
+		"source=/path/to/hydrofabric,target=/hydrofabric,type=bind"
+	],
+	"customizations": {
+	"vscode": {
+		"settings": {
+		"terminal.integrated.defaultProfile.linux": "bash"
+		},
+		"extensions": [
+		"ms-python.python",
+		"charliermarsh.ruff",
+		"yy0931.vscode-sqlite3-editor",
+		"ms-python.debugpy",
+		"ms-toolsai.jupyter"
+		]
+	}
+  }
+}

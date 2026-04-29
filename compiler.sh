@@ -1,7 +1,22 @@
+#!/bin/bash
+
 #TODO add options for clean/noclean, make/nomake, cython/nocython
 #TODO include instuctions on blowing away entire package for fresh install e.g. rm -r ~/venvs/mesh/lib/python3.6/site-packages/troute/*
+
 #set root folder of github repo (should be named t-route)
 REPOROOT=`pwd`
+
+# Path to nwm-ewts python package source (development fallback)
+: "${EWTS_PY_ROOT:=$REPOROOT/../../../nwm-ewts/runtime/python/ewts}"
+
+# Preferred EWTS install prefix and wheel location
+: "${EWTS_PREFIX:=/tmp/ewts_install}"
+: "${EWTS_WHEEL_DIR:=$EWTS_PREFIX/python/dist}"
+
+echo "using EWTS_PY_ROOT=${EWTS_PY_ROOT}"
+echo "using EWTS_PREFIX=${EWTS_PREFIX}"
+echo "using EWTS_WHEEL_DIR=${EWTS_WHEEL_DIR}"
+
 #For each build step, you can set these to true to make it build
 #or set it to anything else (or unset) to skip that step
 build_mc_kernel=true
@@ -11,29 +26,58 @@ build_framework=true
 build_routing=true
 build_config=true
 build_nwm=true
+build_bmi=true
 
 if [ -z "$F90" ]
 then
     export F90="gfortran"
     echo "using F90=${F90}"
 fi
+
 if [ -z "$CC" ]
 then
     export CC="gcc"
     echo "using CC=${CC}"
 fi
 
-#preserve old/default behavior of installing packages with -e
+# Parse command line arguments
 WITH_EDITABLE=true
-if [ "$1" == 'no-e' ]
-then
-WITH_EDITABLE=false
+USE_UV=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        no-e)
+            WITH_EDITABLE=false
+            shift
+            ;;
+        --uv)
+            USE_UV=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [no-e] [--uv]"
+            echo "  no-e: Install packages without editable mode"
+            echo "  --uv: Use uv pip instead of pip"
+            exit 1
+            ;;
+    esac
+done
+
+# set pip command based on UV flag
+if [[ "$USE_UV" == true ]]; then
+    PIP_CMD="uv pip"
+    echo "Using uv pip for package installation"
+else
+    PIP_CMD="pip"
+    echo "Using standard pip for package installation"
 fi
 
 #if you have custom static library paths, uncomment below and export them
 #export LIBRARY_PATH=<paths>:$LIBRARY_PATH
 #if you have custom dynamic library paths, uncomment below and export them
 #export LD_LIBRARY_PATHS=<paths>:$LD_LIBRARY_PATHS
+
 if [ -z "$NETCDF" ]
 then
     export NETCDFINC=/usr/include/openmpi-x86_64/
@@ -44,13 +88,14 @@ then
     # (before ./compiler.sh)
     if [ -n "$NETCDFALTERNATIVE" ]
     then
-	echo "using alternative NETCDF inc ${NETCDFALTERNATIVE}"
-	export NETCDFINC=$NETCDFALTERNATIVE
+        echo "using alternative NETCDF inc ${NETCDFALTERNATIVE}"
+        export NETCDFINC=$NETCDFALTERNATIVE
     fi
 else
     export NETCDFINC="${NETCDF}"
 fi
 echo "using NETCDFINC=${NETCDFINC}"
+
 
 if  [[ "$build_mc_kernel" == true ]]; then
   #building reach and resevoir kernel files .o
@@ -61,7 +106,7 @@ if  [[ "$build_mc_kernel" == true ]]; then
 fi
 
 if  [[ "$build_diffusive_tulane_kernel" == true ]]; then
-  #building reach and resevoir kernel files .o  
+  #building reach and resevoir kernel files .o
   cd $REPOROOT/src/kernel/diffusive/
   make clean
   make diffusive.o
@@ -72,22 +117,41 @@ if  [[ "$build_diffusive_tulane_kernel" == true ]]; then
 fi
 
 if [[ "$build_reservoir_kernel" == true ]]; then
-  cd $REPOROOT/src/kernel/reservoir/
-  make clean
-  #make NETCDFINC=`nc-config --includedir` || exit
-  #make binding_lp.a
-  #make install_lp || exit
-  make
-  make install_lp || exit
-  make install_rfc || exit
+    cd $REPOROOT/src/kernel/reservoir/
+    make clean
+    #make NETCDFINC=`nc-config --includedir` || exit
+    #make binding_lp.a
+    #make install_lp || exit
+    make
+    make install_lp || exit
+    make install_rfc || exit
+fi
 
+# Remove any old/stale ewts/troute_ewts from the environment to avoid shadowing
+pip uninstall -y ewts troute_ewts >/dev/null 2>&1 || true
+
+# Prefer installed EWTS wheel; fall back to source tree for development
+EWTS_WHEEL=""
+if compgen -G "${EWTS_WHEEL_DIR}/ewts-*.whl" > /dev/null; then
+  EWTS_WHEEL=$(ls -1t "${EWTS_WHEEL_DIR}"/ewts-*.whl | head -n 1)
+fi
+
+if [[ -n "${EWTS_WHEEL}" ]]; then
+  echo "Installing EWTS from wheel: ${EWTS_WHEEL}"
+  pip install "${EWTS_WHEEL}" || exit
+else
+  echo "No EWTS wheel found in ${EWTS_WHEEL_DIR}"
+  echo "Falling back to source install from ${EWTS_PY_ROOT}"
+
+  if [[ ${WITH_EDITABLE} == true ]]; then
+    pip install --editable "${EWTS_PY_ROOT}" || exit
+  else
+    pip install "${EWTS_PY_ROOT}" || exit
+  fi
 fi
 
 if [[ "$build_framework" == true ]]; then
-  #creates troute package
   cd $REPOROOT/src/troute-network
-  rm -rf build
-
   if [[ ${WITH_EDITABLE} == true ]]; then
     pip install --no-build-isolation --config-setting='--build-option=--use-cython' --editable . --config-setting='editable_mode=compat' || exit
   else
@@ -96,30 +160,39 @@ if [[ "$build_framework" == true ]]; then
 fi
 
 if [[ "$build_routing" == true ]]; then
-  #updates troute package with the execution script
-  cd $REPOROOT/src/troute-routing
-  rm -rf build
-
-  if [[ ${WITH_EDITABLE} == true ]]; then
-    pip install --no-build-isolation --config-setting='--build-option=--use-cython' --editable . --config-setting='editable_mode=compat' || exit
-  else
-    pip install --no-build-isolation --config-setting='--build-option=--use-cython' . || exit
-  fi
+    #updates troute package with the execution script
+    cd $REPOROOT/src/troute-routing
+    rm -rf build
+    
+    if [[ ${WITH_EDITABLE} == true ]]; then
+        $PIP_CMD install --no-build-isolation --config-setting='--build-option=--use-cython' --editable . --config-setting='editable_mode=compat' || exit
+    else
+        $PIP_CMD install --no-build-isolation --config-setting='--build-option=--use-cython' . || exit
+    fi
 fi
 
 if [[ "$build_config" == true ]]; then
-  #updates troute package with the execution script
-  cd $REPOROOT/src/troute-config
-  if [[ ${WITH_EDITABLE} == true ]]; then
-    pip install --editable . || exit
-  else
-    pip install . || exit
-  fi
+    #updates troute package with the execution script
+    cd $REPOROOT/src/troute-config
+    if [[ ${WITH_EDITABLE} == true ]]; then
+        $PIP_CMD install --editable . || exit
+    else
+        $PIP_CMD install . || exit
+    fi
 fi
 
 if [[ "$build_nwm" == true ]]; then
-  #updates troute package with the execution script
-  cd $REPOROOT/src/troute-nwm
+    #updates troute package with the execution script
+    cd $REPOROOT/src/troute-nwm
+    if [[ ${WITH_EDITABLE} == true ]]; then
+        $PIP_CMD install --editable . || exit
+    else
+        $PIP_CMD install . || exit
+    fi
+fi
+
+if [[ "$build_bmi" == true ]]; then
+  cd $REPOROOT/src/troute-bmi
   if [[ ${WITH_EDITABLE} == true ]]; then
     pip install --editable . || exit
   else
