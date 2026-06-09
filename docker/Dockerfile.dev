@@ -1,0 +1,46 @@
+### BASE IMAGE ###
+FROM rockylinux:9.2 AS rocky-base
+
+WORKDIR "/t-route/"
+
+# Install system dependencies
+RUN yum install -y epel-release
+RUN yum install -y netcdf netcdf-fortran netcdf-fortran-devel netcdf-openmpi
+RUN yum install -y git cmake python python-devel pip
+
+# ???
+RUN ln -s /usr/lib64/gfortran/modules/netcdf.mod /usr/include/openmpi-x86_64/netcdf.mod
+
+# Setup virtual environment
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Install non-t-route dependencies
+COPY requirements.txt .
+RUN python -m pip install -r requirements.txt
+
+### DEV IMAGE ###
+FROM rocky-base AS dev
+
+# Install t-route
+COPY pyproject.toml compiler.sh ./
+COPY src /t-route/src
+RUN python -m pip install .[jupyter,test]
+RUN ls -R /t-route/
+RUN ./compiler.sh
+
+# Optional expose 800 if not using devcontainer
+EXPOSE 8000
+
+### PROD IMAGE ###
+FROM rocky-base AS troute
+
+# Install t-route
+COPY . .
+RUN ./compiler.sh no-e
+
+RUN MKDIR "/hydrofabric"
+
+ENTRYPOINT ["/opt/venv/bin/python", "-m", "nwm_routing"]
+

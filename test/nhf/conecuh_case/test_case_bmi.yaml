@@ -1,0 +1,52 @@
+# BMI test config for Conecuh NHF case
+# Run via: uv run python run_bmi.py
+#--------------------------------------------------------------------------------
+log_parameters:
+    #----------
+    showtiming: True
+    log_level : INFO
+#--------------------------------------------------------------------------------
+network_topology_parameters:
+    #----------
+    supernetwork_parameters:
+        #----------
+        geo_file_path: domain/437343.gpkg
+        network_type: NHF
+    waterbody_parameters:
+      #----------
+        break_network_at_waterbodies: True
+#--------------------------------------------------------------------------------
+compute_parameters:
+    #----------
+    parallel_compute_method: by-subnetwork-jit-clustered
+    compute_kernel         : V02-structured
+    assume_short_ts        : True
+    subnetwork_target_size : 10000
+    cpu_pool               : 1
+    restart_parameters:
+        #----------
+        start_datetime: "2009-12-12 00:00:00"
+    forcing_parameters:
+        #----------
+        qts_subdivisions            : 12
+        dt                          : 300 # [sec]
+        nts                         : 7356
+        max_loop_size               : 288
+        qlat_file_pattern_filter: '*.CHRTOUT_DOMAIN1.csv'
+        qlat_input_folder: channel_forcing_retro/
+    data_assimilation_parameters:
+        streamflow_da:
+            streamflow_nudging            : False
+            diffusive_streamflow_nudging  : False
+        reservoir_da:
+            reservoir_persistence_da:
+                reservoir_persistence_usgs  : False
+            reservoir_rfc_da:
+                reservoir_rfc_forecasts: False
+#--------------------------------------------------------------------------------
+output_parameters:
+  stream_output:
+      stream_output_directory: output_retro/
+      stream_output_time: -1 # [hr]
+      stream_output_type: '.nc'
+      stream_output_internal_frequency: 60

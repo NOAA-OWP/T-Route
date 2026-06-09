@@ -3,8 +3,9 @@ setuptools>=64.0,<69.0
 wheel
 numpy~=1.0
 Cython>3,!=3.0.4
-pandas >=1.1.5, <=2.2.0
+pandas<3
 xarray
+seaborn
 netcdf4
 pyyaml
 toolz
