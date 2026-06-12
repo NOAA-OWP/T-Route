@@ -52,6 +52,33 @@ else:
     raise Exception("Could not identify fortran compiler!")
 print("Fortran compiler type is: {0}".format(fcompiler_type))
 
+# ------------------------------------------------------------
+# EWTS configuration
+# ------------------------------------------------------------
+EWTS_PREFIX = os.environ.get("EWTS_PREFIX", "/opt/ewts")
+USE_EWTS = os.environ.get("TROUTE_USE_EWTS", "OFF").upper() in ("1", "ON", "TRUE", "YES")
+
+ewts_include_dirs = []
+ewts_library_dirs = []
+ewts_libraries = []
+ewts_compile_args = []
+
+if USE_EWTS:
+    ewts_include_dirs = [
+        os.path.join(EWTS_PREFIX, "include"),
+    ]
+    ewts_library_dirs = [
+        os.path.join(EWTS_PREFIX, "lib"),
+        os.path.join(EWTS_PREFIX, "lib64"),
+    ]
+    ewts_libraries = [
+        "ewts_c",
+        "ewts_ngen_bridge",
+    ]
+    ewts_compile_args = [
+        "-DTROUTE_USE_EWTS",
+    ]
+
 class build_ext_subclass( build_ext ):
     def build_extensions(self):
         for e in self.extensions:
@@ -89,19 +116,18 @@ levelpool_reservoirs = Extension(
     "troute.network.reservoirs.levelpool.levelpool",
     sources=[
              "troute/network/reservoirs/levelpool/levelpool.{}".format(ext),
-             "troute/network/logger.c",
              ],
-    include_dirs=[np.get_include(), "troute/network/"],
+    include_dirs=[np.get_include(), "troute/network/"]  + ewts_include_dirs,
+    library_dirs=ewts_library_dirs,
     extra_objects=["./libs/binding_lp.a"],
-    libraries=["netcdff", "netcdf"],
-    extra_compile_args=["-g"],
+    libraries=["netcdff", "netcdf"] + ewts_libraries,
+    extra_compile_args=["-g"] + ewts_compile_args,
 )
 
 #hybrid_reservoirs = Extension(
 #    "troute.network.reservoirs.hybrid.hybrid",
 #    sources=[
 #             "troute/network/reservoirs/hybrid/hybrid.{}".format(ext),
-#             "troute/network/logger.c",
 #             ],
 #    include_dirs=[np.get_include(), "troute/network/"],
 #    extra_objects=["./libs/bind_hybrid.a"],
@@ -113,12 +139,12 @@ rfc_reservoirs = Extension(
     "troute.network.reservoirs.rfc.rfc",
     sources=[
              "troute/network/reservoirs/rfc/rfc.{}".format(ext),
-             "troute/network/logger.c",
              ],
-    include_dirs=[np.get_include(),  "troute/network/"],
+    include_dirs=[np.get_include(),  "troute/network/"] + ewts_include_dirs,
+    library_dirs=ewts_library_dirs,
     extra_objects=["./libs/bind_rfc.a"],
-    libraries=["netcdff", "netcdf"],
-    extra_compile_args=["-g"],
+    libraries=["netcdff", "netcdf"] + ewts_libraries,
+    extra_compile_args=["-g"] + ewts_compile_args,
 )
 
 package_data = {"troute": ["__init__.pxd"],
