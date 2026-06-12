@@ -2,9 +2,9 @@
 set -e
 
 # This script is called during the ngen Dockerfile if the USE_EWTS
-# build argument is ON (or 1, True, or Yes). It installs EWTS for 
-# running t-route in ngen then calls the compiler.sh to install
-# remaining dependencies
+# build argument is ON (or 1, True, or Yes). It enables/uses the
+# EWTS already intsalled in the ngen Dockerfile, then calls the
+# compiler.sh to install remaining dependencies
 
 export EWTS_PREFIX="${EWTS_PREFIX:-/opt/ewts}"
 export TROUTE_USE_EWTS=ON
