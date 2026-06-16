@@ -100,6 +100,14 @@ class NHF(NHFPreprocessMixin, AbstractNetwork):
             hydrolocations = nhf["hydrolocations"]
 
             # Preprocess network objects
+            (
+                virtual_flowpaths,
+                reference_flowpaths,
+                waterbodies,
+                self.div_reverse_lookup,
+            ) = _force_headwater_routing(
+                virtual_flowpaths, reference_flowpaths, waterbodies
+            )
             discretization_len = self.supernetwork_parameters.get("nhf_discretization_len", 300.0)
             self.preprocess_network(flowpaths, reference_flowpaths, virtual_flowpaths, discretization_len)
 
@@ -297,17 +305,26 @@ class NHF(NHFPreprocessMixin, AbstractNetwork):
         # Make weights
         self.weights = np.nan_to_num(vfp_map["percentage_area_contribution"].to_numpy())
 
-        # In case NHF percents per div don't sum to 100, distribute remainder evenly.
+        # Check whether percentage_area_contribution sums close to 100 per div.
         # Factorize div_id to dense 0..K-1 group codes before bincount. div_id may be
         # a large, sparse identifier (NHF >= 1.2.0 ids are ~1e15), and bincount on the
-        # raw values would allocate a max(div_id)-sized array. Indexing the per-group
-        # results back with `codes` is identical to indexing with the raw div_ids, so
-        # the result is unchanged on dense-id datasets (e.g. NHF 1.1.4).
-        codes, _ = pd.factorize(vfp_map["div_id"].astype("int64").to_numpy(), sort=False)
+        # raw values would allocate a max(div_id)-sized array.
+        codes, uniq_divs = pd.factorize(vfp_map["div_id"].astype("int64").to_numpy(), sort=False)
         known_sum = np.bincount(codes, weights=self.weights)
-        vfp_count = np.bincount(codes)
-        share = np.divide(1 - known_sum, vfp_count, out=np.zeros_like(vfp_count, dtype=float), where=vfp_count!=0)
-        self.weights += share[codes]
+
+        # Warn about divs whose weights don't sum near 1 and are not forced-routing headwaters
+        forced_ids = set(self.div_reverse_lookup.keys()) | set(self.div_reverse_lookup.values())
+        bad_mask = ~np.isclose(known_sum, 1.0, atol=0.01)
+        bad_divs = [int(uniq_divs[i]) for i in np.where(bad_mask)[0] if int(uniq_divs[i]) not in forced_ids]
+        if bad_divs:
+            LOG.warning(
+                "%d div_id(s) have percentage_area_contribution that does not sum close to 100 "
+                "(and are not forced-routing headwaters), e.g. %s",
+                len(bad_divs), bad_divs[:10]
+            )
+
+        # Reverse temporary div_id assignment for any forced-routing headwaters
+        vfp_map["div_id"] = vfp_map["div_id"].replace(self.div_reverse_lookup)
 
         # Set class variables
         self.vfp_nex_ids = vfp_map["up_node_id"].to_numpy()
@@ -482,3 +499,70 @@ class NHF(NHFPreprocessMixin, AbstractNetwork):
             self._usace_lake_gage_crosswalk = inputs.get("usace_lake_gage_crosswalk", None)
             self._usbr_lake_gage_crosswalk = inputs.get("usbr_lake_gage_crosswalk", None)
             self._rfc_lake_gage_crosswalk = inputs.get("rfc_lake_gage_crosswalk", None)
+
+
+def _force_headwater_routing(
+    virtual_flowpaths: pd.DataFrame,
+    reference_flowpaths: pd.DataFrame,
+    waterbodies: pd.DataFrame,
+) -> pd.DataFrame:
+    """Modify datasets such that routing can be performed on headwater virtual flowpaths.
+
+    This functionality is currently implemented for waterbodies on virtual
+    flowpaths, but it could be used for gages as well.
+    """
+    # Establish eligible headwaters.
+    forced_vfps = []
+    headwater_vfps = (
+        virtual_flowpaths[virtual_flowpaths["up_virtual_nex_id"].isna()][
+            "virtual_fp_id"
+        ]
+        .astype(int)
+        .values
+    )
+
+    # Force routing on headwater vfps with waterbodies
+    waterbody_vfps = waterbodies["virtual_fp_id"].dropna().astype(int).values
+    forced_vfps.extend(list(set(headwater_vfps).intersection(waterbody_vfps)))
+
+    # In the future, could add more conditions here
+
+    ### Modify datasets ###
+    # Add new up_virtual_nex_id so that vfps won't be dropped in network refactor.
+    max_up_id = int(virtual_flowpaths["up_virtual_nex_id"].max()) + 1
+    new_ids = np.arange(max_up_id, max_up_id + len(forced_vfps))
+    virtual_flowpaths.loc[
+        virtual_flowpaths["virtual_fp_id"].astype(int).isin(forced_vfps),
+        "up_virtual_nex_id",
+    ] = new_ids
+
+    # Assign each headwater its own temporary div_id.
+    # This must be done because the current conceptual model assumes that
+    # there confluences in a div. This comes up in _build_div_weighting_matrix
+    # Where having multiple options for up_node_id will confuse the lat
+    # placement.
+    max_div_id = int(reference_flowpaths["div_id"].max()) + 1
+    new_div_mapping = {vfp: max_div_id + ind for ind, vfp in enumerate(forced_vfps)}
+    force_mask = reference_flowpaths["virtual_fp_id"].astype(int).isin(forced_vfps)
+    reference_flowpaths.loc[force_mask, "new_div_id"] = reference_flowpaths.loc[
+        force_mask, "virtual_fp_id"
+    ].map(new_div_mapping)
+    reference_flowpaths.loc[force_mask, "fp_id"] = reference_flowpaths.loc[
+        force_mask, "virtual_fp_id"
+    ].map(new_div_mapping)
+    div_reverse_lookup = (
+        reference_flowpaths.loc[force_mask, ["new_div_id", "div_id"]]
+        .astype(int)
+        .set_index("new_div_id")["div_id"]
+        .to_dict()
+    )
+    reference_flowpaths.loc[force_mask, "div_id"] = reference_flowpaths.loc[
+        force_mask, "new_div_id"
+    ]
+    reference_flowpaths = reference_flowpaths.drop(columns="new_div_id")
+
+    force_mask = waterbodies["virtual_fp_id"].astype("Int64").isin(forced_vfps)
+    waterbodies.loc[force_mask, "fp_id"] = waterbodies.loc[
+        force_mask, "virtual_fp_id"
+    ].map(new_div_mapping)
+    return virtual_flowpaths, reference_flowpaths, waterbodies, div_reverse_lookup
