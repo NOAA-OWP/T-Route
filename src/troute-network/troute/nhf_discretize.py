@@ -59,6 +59,7 @@ class LinkArrays:
     """
 
     fp_id: np.ndarray
+    vfp_id: np.ndarray
     dn_node_id: np.ndarray
     up_node_id: np.ndarray
     length: np.ndarray
@@ -69,6 +70,7 @@ class LinkArrays:
         """Load LinksArrays from a virtual flowpaths layer."""
         return cls(
             df[FIELD_FP_ID].to_numpy().astype(int),
+            df[FIELD_VIRTUAL_FP_ID].to_numpy().astype(int),
             df[FIELD_DN_VIRTUAL_NEX_ID].to_numpy().astype(int),
             df[FIELD_UP_VIRTUAL_NEX_ID].to_numpy().astype(int),
             df[FIELD_LENGTH].to_numpy() * FIELD_LENGTH_CONVERSION,
@@ -91,6 +93,7 @@ class LinkArrays:
     def filter(self, mask: np.ndarray) -> None:
         """Keep masked links."""
         self.fp_id = self.fp_id[mask]
+        self.vfp_id = self.vfp_id[mask]
         self.dn_node_id = self.dn_node_id[mask]
         self.up_node_id = self.up_node_id[mask]
         self.length = self.length[mask]
@@ -99,6 +102,7 @@ class LinkArrays:
     def remove(self, ind: int) -> None:
         """Remove a specific index from all arrays."""
         self.fp_id = np.delete(self.fp_id, ind)
+        self.vfp_id = np.delete(self.vfp_id, ind)
         self.dn_node_id = np.delete(self.dn_node_id, ind)
         self.up_node_id = np.delete(self.up_node_id, ind)
         self.length = np.delete(self.length, ind)
@@ -248,11 +252,12 @@ def export_links_and_nodes(
     sorted_ups = links.up_node_id[idx_lookup]
     link_idxs = np.searchsorted(sorted_ups, up_node_ids)
     fp_ids = links.fp_id[idx_lookup[link_idxs]]
+    vfp_ids = links.vfp_id[idx_lookup[link_idxs]]
     segment_order = links.segment_order[idx_lookup[link_idxs]]
 
     # Export geopackage
     gpd.GeoDataFrame(
-        {"up_node_id": up_node_ids, "dn_node_id": dn_node_ids, "fp_id": fp_ids, "segment_order": segment_order},
+        {"up_node_id": up_node_ids, "dn_node_id": dn_node_ids, "fp_id": fp_ids, "vfp_ids": vfp_ids, "segment_order": segment_order},
         geometry=link_geometries,
         crs=virtual_flowpaths.crs,
     ).to_file(export_links_nodes_gpkg_path, layer="links")
@@ -274,9 +279,11 @@ def _load_initial_links(
     virtual_flowpaths: gpd.GeoDataFrame,
     reference_flowpaths: pd.DataFrame,
 ):
+    # Drop headwater vfps
     tmp_vfp = virtual_flowpaths.dropna(subset=FIELD_UP_VIRTUAL_NEX_ID).copy()
     tmp_vfp[FIELD_UP_VIRTUAL_NEX_ID] = tmp_vfp[FIELD_UP_VIRTUAL_NEX_ID].astype(int)
 
+    # Make LinkArray object
     return LinkArrays.from_df(
         pd.merge(
             tmp_vfp,
@@ -392,6 +399,7 @@ def _discretize_links(
     # Pull long-link slices once
     long_length = links.length[long_mask]
     long_fp_id = links.fp_id[long_mask]
+    long_vfp_id = links.vfp_id[long_mask]
     long_up = links.up_node_id[long_mask]
     long_dn = links.dn_node_id[long_mask]
     long_order = links.segment_order[long_mask]
@@ -410,6 +418,7 @@ def _discretize_links(
 
     # Scalar attributes propagate by repeat/index
     subdiv_fp_id = np.repeat(long_fp_id, n)
+    subdiv_vfp_id = np.repeat(long_vfp_id, n)
     subdiv_length = np.repeat(new_len, n)
     subdiv_order = long_order[group] + local_j / n[group]
 
@@ -447,12 +456,13 @@ def _discretize_links(
     # Concat kept-as-is short/medium links with the freshly-subdivided sub-links
     keep_mask = ~long_mask
     link_fp_id = np.concatenate([links.fp_id[keep_mask], subdiv_fp_id])
+    link_vfp_id = np.concatenate([links.vfp_id[keep_mask], subdiv_vfp_id])
     length = np.concatenate([links.length[keep_mask], subdiv_length])
     up_node_id = np.concatenate([links.up_node_id[keep_mask], subdiv_up_node])
     dn_node_id = np.concatenate([links.dn_node_id[keep_mask], subdiv_dn_node])
     segment_order = np.concatenate([links.segment_order[keep_mask], subdiv_order])
 
-    return LinkArrays(link_fp_id, dn_node_id, up_node_id, length, segment_order)
+    return LinkArrays(link_fp_id, link_vfp_id, dn_node_id, up_node_id, length, segment_order)
 
 def _format_link_df(links: LinkArrays, flowpaths: pd.DataFrame) -> pd.DataFrame:
     """Conform to AbstractNetwork format and build mapping from link id to fp_id."""
