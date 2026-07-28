@@ -87,23 +87,27 @@ def read_geopkg(file_path, compute_parameters, waterbody_parameters, cpu_pool):
     # Handle different key column names between flowpaths and flowpath_attributes
     flowpaths_df = table_dict.get('flowpaths', pd.DataFrame())
     flowpath_attributes_df = table_dict.get('flowpath_attributes', pd.DataFrame())
-
-    # Check if 'link' column exists and rename it to 'id'
+    
+    # Check if 'link' column exists; drop existing 'id' col; rename 'link' to 'id'
     if 'link' in flowpath_attributes_df.columns:
-        flowpath_attributes_df.rename(columns={'link': 'id'}, inplace=True) 
-     
+        # In HF 2.2, a 'link' field was introduced. The field is identical to
+        # previous version's 'id' field, but it preferred moving forwards.
+        flowpath_attributes_df.drop(columns=['id'], errors='ignore', inplace=True)
+        flowpath_attributes_df.rename(columns={'link': 'id'}, inplace=True)
+        
     # Merge flowpaths and flowpath_attributes 
     flowpaths = pd.merge(
         flowpaths_df, 
         flowpath_attributes_df, 
         on='id', 
-        how='inner'
+        how='inner',
+        suffixes=("", "_flowpath_attributes"),
     )
 
     lakes = table_dict.get('lakes', pd.DataFrame())
     network = table_dict.get('network', pd.DataFrame())
     nexus = table_dict.get('nexus', pd.DataFrame())
-
+    
     return flowpaths, lakes, network, nexus
 
 def read_json(file_path, edge_list):
@@ -241,7 +245,7 @@ class HYFeaturesNetwork(AbstractNetwork):
     """
     
     """
-    __slots__ = ["_upstream_terminal", "_nexus_latlon", "_duplicate_ids_df",]
+    __slots__ = ["_upstream_terminal", "_nexus_latlon", "_duplicate_ids_df", "_ds"]
 
     def __init__(self, 
                  supernetwork_parameters, 
@@ -457,14 +461,14 @@ class HYFeaturesNetwork(AbstractNetwork):
         # If waterbodies are being simulated, create waterbody dataframes and dictionaries
         if not lakes.empty:
             self._waterbody_df = (
-                lakes[['hl_link','ifd','LkArea','LkMxE','OrificeA',
-                       'OrificeC','OrificeE','WeirC','WeirE','WeirL','id']]
-                .rename(columns={'hl_link': 'lake_id'})
+                lakes[['lake_id','ifd','LkArea','LkMxE','OrificeA',
+                       'OrificeC','OrificeE','WeirC','WeirE','WeirL']]
                 )
             
-            id = self.waterbody_dataframe['id'].str.split('-', expand=True).iloc[:,1]
-            self._waterbody_df['id'] = id
-            self._waterbody_df['id'] = self._waterbody_df.id.astype(float).astype(int)
+            # id = self.waterbody_dataframe['id'].str.split('-', expand=True).iloc[:,1]
+            # self._waterbody_df['id'] = id
+            # self._waterbody_df['id'] = self._waterbody_df.id.astype(float).astype(int)
+            self._waterbody_df = self._waterbody_df.copy()
             self._waterbody_df['lake_id'] = self.waterbody_dataframe.lake_id.astype(float).astype(int)
             self._waterbody_df = self.waterbody_dataframe.set_index('lake_id').drop_duplicates().sort_index()
             
@@ -480,31 +484,33 @@ class HYFeaturesNetwork(AbstractNetwork):
             })
             update_dict = dict(self._duplicate_ids_df[['lake_id','synthetic_ids']].values)
             
-            tmp_wbody_conn = self.dataframe[['waterbody']].dropna()
-            tmp_wbody_conn = (
-                tmp_wbody_conn['waterbody']
-                .str.split(',',expand=True)
-                .reset_index()
-                .melt(id_vars='key')
-                .drop('variable', axis=1)
-                .dropna()
-                .astype(int)
-                )
-            tmp_wbody_conn = tmp_wbody_conn[tmp_wbody_conn['value'].isin(self.waterbody_dataframe.index)]
-            self._dataframe = (
-                self.dataframe
-                .reset_index()
-                .merge(tmp_wbody_conn, how='left', on='key')
-                .drop('waterbody', axis=1)
-                .rename(columns={'value': 'waterbody'})
-                .set_index('key')
-            )
+            # tmp_wbody_conn = self.dataframe[['waterbody']].dropna()
+            # tmp_wbody_conn = (
+            #     tmp_wbody_conn['waterbody']
+            #     .str.split(',',expand=True)
+            #     .reset_index()
+            #     .melt(id_vars='key')
+            #     .drop('variable', axis=1)
+            #     .dropna()
+            #     .astype(int)
+            #     )
+            # tmp_wbody_conn = tmp_wbody_conn[tmp_wbody_conn['value'].isin(self.waterbody_dataframe.index)]
+            # import pdb; pdb.set_trace()
+            # self._dataframe = (
+            #     self.dataframe
+            #     .reset_index()
+            #     .merge(tmp_wbody_conn, how='left', on='key')
+            #     .drop('waterbody', axis=1)
+            #     .rename(columns={'value': 'waterbody'})
+            #     .set_index('key')
+            # )
 
             self._waterbody_df = self.waterbody_dataframe.rename(index=update_dict).sort_index()
+            self._dataframe['waterbody'] = self.dataframe.waterbody.astype(pd.Int64Dtype())
             self._dataframe = self.dataframe.replace({'waterbody': update_dict})
             
             #FIXME temp solution for missing waterbody info in hydrofabric
-            self.bandaid()
+            # self.bandaid()
             
             wbody_conn = self.dataframe[['waterbody']].dropna().astype(int).reset_index()
             
@@ -528,8 +534,7 @@ class HYFeaturesNetwork(AbstractNetwork):
             # Add lat, lon, and crs columns for LAKEOUT files:
             lakeout = self.output_parameters.get("lakeout_output", None)
             if lakeout:
-                lat_lon_crs = lakes[['hl_link','hl_reference','geometry']].rename(columns={'hl_link': 'lake_id'})
-                lat_lon_crs = lat_lon_crs[lat_lon_crs['hl_reference']=='WBOut']
+                lat_lon_crs = lakes[['lake_id','geometry']]
                 lat_lon_crs['lake_id'] = lat_lon_crs.lake_id.astype(float).astype(int)
                 lat_lon_crs = lat_lon_crs.set_index('lake_id').drop_duplicates().sort_index()
                 lat_lon_crs = lat_lon_crs[lat_lon_crs.index.isin(self.waterbody_dataframe.index)]
@@ -546,8 +551,12 @@ class HYFeaturesNetwork(AbstractNetwork):
                 self._waterbody_df['crs'] = np.nan
                 
             # Add the Great Lakes to the connections dictionary and waterbody dataframe
-            nexus['WBOut_id'] = nexus['hl_uri'].str.extract(r'WBOut-(\d+)').astype(float)
-            great_lakes_df = nexus[nexus['WBOut_id'].isin([4800002,4800004,4800006,4800007])][['WBOut_id','toid']]
+            # nexus['WBOut_id'] = nexus['hl_uri'].str.extract(r'WBOut-(\d+)').astype(float)
+            # great_lakes_df = nexus[nexus['WBOut_id'].isin([4800002,4800004,4800006,4800007])][['WBOut_id','toid']]
+            
+            #NOTE: Great Lakes seem to not be available in v2.2 of hydrofabric...
+            great_lakes_df = pd.DataFrame()
+            
             if not great_lakes_df.empty:
                 great_lakes_df['toid'] = great_lakes_df['toid'].str.extract(r'wb-(\d+)').astype(float)
                 great_lakes_df = great_lakes_df.astype(int)
@@ -601,7 +610,7 @@ class HYFeaturesNetwork(AbstractNetwork):
             self._duplicate_ids_df = pd.DataFrame()
             self._gl_climatology_df = pd.DataFrame()
 
-        self._dataframe = self.dataframe.drop('waterbody', axis=1).drop_duplicates()
+        self._dataframe = self.dataframe.drop('waterbody', axis=1, errors='ignore').drop_duplicates()
 
     def preprocess_data_assimilation(self, network):
         if not network.empty:
@@ -708,90 +717,118 @@ class HYFeaturesNetwork(AbstractNetwork):
         nts = run.get("nts", 1)
         qlat_input_folder = run.get("qlat_input_folder", None)
         qlat_input_file = run.get("qlat_input_file", None)
-
+        
+        if qlat_input_file:
+            _, ql_file_extension = os.path.splitext(qlat_input_file)
+        
         if qlat_input_folder:
-            qlat_input_folder = Path(qlat_input_folder)
-            if "qlat_files" in run:
-                qlat_files = run.get("qlat_files")
-                qlat_files = [qlat_input_folder.joinpath(f) for f in qlat_files]
-            elif "qlat_file_pattern_filter" in run:
-                qlat_file_pattern_filter = run.get(
-                    "qlat_file_pattern_filter", "*CHRT_OUT*"
-                )
-                qlat_files = sorted(qlat_input_folder.glob(qlat_file_pattern_filter))
-            
-            dfs=[]
-            
-            #FIXME Temporary solution to allow t-route to use ngen nex-* output files as forcing files
-            # This capability should be here, but we need to think through how to handle all of this 
-            # data in memory for large domains and many timesteps... - shorvath, Feb 28, 2024
-            qlat_file_pattern_filter = self.forcing_parameters.get("qlat_file_pattern_filter", None)
-            if qlat_file_pattern_filter=="nex-*":
-                for f in qlat_files:
-                    df = pd.read_csv(f, names=['timestamp', 'qlat'], index_col=[0])
-                    df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y%m%d%H%M')
-                    df = df.set_index('timestamp')
-                    df = df.T
-                    df.index = [int(os.path.basename(f).split('-')[1].split('_')[0])]
-                    df = df.rename_axis(None, axis=1)
-                    df.index.name = 'feature_id'
-                    dfs.append(df)
+            if qlat_input_file and ql_file_extension=='.nc':
+                start_dt, end_dt = run.get('timestamps')
                 
-                # lateral flows [m^3/s] are stored at NEXUS points with NEXUS ids
-                nexuses_lateralflows_df = pd.concat(dfs, axis=0) 
+                # Open the file
+                ds = xr.open_dataset(os.path.join(qlat_input_folder, Path(qlat_input_file)))
+                ds_slice = ds.sel({'time': slice(start_dt, end_dt)})
+                ds.close()
+                
+                qlat_df = ds_slice['runoff_rate'].transpose("feature_id", "time").to_pandas()
+                qlat_df.columns = qlat_df.columns.strftime('%Y%m%d%H%M')
+                
+                # Drop 'tnx-' rows if present, and drop 'nex-' prefixes if present.
+                # NOTE: this drops terminal nexus points. Should t-route handle this differently (accumulate at tnx points)?
+                if pd.api.types.is_string_dtype(qlat_df.index):
+                    qlat_df = qlat_df[~qlat_df.index.astype(str).str.startswith('tnx-')]
+                    qlat_df.index = qlat_df.index.astype(str).str.replace(r'^[a-zA-Z-]+', '', regex=True).astype(int)
+                # qlats_df = qlat_df.rename(index=self.downstream_flowpath_dict)
+                qlats_df = qlat_df[qlat_df.index.isin(self.segment_index)]
+                
+                all_df = pd.DataFrame( np.zeros( (len(self.segment_index), len(qlats_df.columns)) ), index=self.segment_index,
+                    columns=qlats_df.columns )
+                all_df.loc[ qlats_df.index ] = qlats_df
+                qlats_df = all_df.sort_index()
+                
             else:
-                for f in qlat_files:
-                    df = read_file(f)
-                    df['feature_id'] = df['feature_id'].map(lambda x: int(str(x).removeprefix('nex-')) if str(x).startswith('nex') else int(x))
-                    assert df[
-                        "feature_id"
-                    ].is_unique, f"'feature_id's must be unique. '{f!s}' contains duplicate 'feature_id's: {pformat(df.loc[df['feature_id'].duplicated(), 'feature_id'].to_list())}"
-                    df = df.set_index('feature_id')
-                    dfs.append(df)
-            
-                # lateral flows [m^3/s] are stored at NEXUS points with NEXUS ids
-                nexuses_lateralflows_df = pd.concat(dfs, axis=1) 
-            
-            # Take flowpath ids entering NEXUS and replace NEXUS ids by the upstream flowpath ids
-            qlats_df = nexuses_lateralflows_df.rename(index=self.downstream_flowpath_dict)
-            qlats_df = qlats_df[qlats_df.index.isin(self.segment_index)]
+                qlat_input_folder = Path(qlat_input_folder)
+                if "qlat_files" in run:
+                    qlat_files = run.get("qlat_files")
+                    qlat_files = [qlat_input_folder.joinpath(f) for f in qlat_files]
+                elif "qlat_file_pattern_filter" in run:
+                    qlat_file_pattern_filter = run.get(
+                        "qlat_file_pattern_filter", "*CHRT_OUT*"
+                    )
+                    qlat_files = sorted(qlat_input_folder.glob(qlat_file_pattern_filter))
+                
+                dfs=[]
+                
+                #FIXME Temporary solution to allow t-route to use ngen nex-* output files as forcing files
+                # This capability should be here, but we need to think through how to handle all of this 
+                # data in memory for large domains and many timesteps... - shorvath, Feb 28, 2024
+                qlat_file_pattern_filter = self.forcing_parameters.get("qlat_file_pattern_filter", None)
+                if qlat_file_pattern_filter=="nex-*":
+                    for f in qlat_files:
+                        df = pd.read_csv(f, names=['timestamp', 'qlat'], index_col=[0])
+                        df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y%m%d%H%M')
+                        df = df.set_index('timestamp')
+                        df = df.T
+                        df.index = [int(os.path.basename(f).split('-')[1].split('_')[0])]
+                        df = df.rename_axis(None, axis=1)
+                        df.index.name = 'feature_id'
+                        dfs.append(df)
+                    
+                    # lateral flows [m^3/s] are stored at NEXUS points with NEXUS ids
+                    nexuses_lateralflows_df = pd.concat(dfs, axis=0) 
+                else:
+                    for f in qlat_files:
+                        df = read_file(f)
+                        df['feature_id'] = df['feature_id'].map(lambda x: int(str(x).removeprefix('nex-')) if str(x).startswith('nex') else int(x))
+                        assert df[
+                            "feature_id"
+                        ].is_unique, f"'feature_id's must be unique. '{f!s}' contains duplicate 'feature_id's: {pformat(df.loc[df['feature_id'].duplicated(), 'feature_id'].to_list())}"
+                        df = df.set_index('feature_id')
+                        dfs.append(df)
+                
+                    # lateral flows [m^3/s] are stored at NEXUS points with NEXUS ids
+                    nexuses_lateralflows_df = pd.concat(dfs, axis=1) 
+                
+                # Take flowpath ids entering NEXUS and replace NEXUS ids by the upstream flowpath ids
+                qlats_df = nexuses_lateralflows_df.rename(index=self.downstream_flowpath_dict)
+                qlats_df = qlats_df[qlats_df.index.isin(self.segment_index)]
+                
+                '''
+                #For a terminal nexus, we want to include the lateral flow from the catchment contributing to that nexus
+                #one way to do that is to cheat and put that lateral flow at the upstream...this is probably the simplest way
+                #right now.  The other is to create a virtual channel segment downstream to "route" i.e accumulate into
+                #but it isn't clear right now how to do that with flow/velocity/depth requirements
+                #find the terminal nodes
+                for tnx, test_up in self._upstream_terminal.items():
+                    #first need to ensure there is an upstream location to dump to
+                    pdb.set_trace()
+                    for nex in test_up:
+                        try:
+                            #FIXME if multiple upstreams exist in this case then a choice is to be made as to which it goes into
+                            #some cases the choice is easy cause the upstream doesn't exist, but in others, it may not be so simple
+                            #in such cases where multiple valid upstream nexuses exist, perhaps the mainstem should be used?
+                            pdb.set_trace()
+                            qlats_df.loc[up] += nexuses_lateralflows_df.loc[tnx]
+                            break #flow added, don't add it again!
+                        except KeyError:
+                            #this upstream doesn't actually exist on the network (maybe it is a headwater?)
+                            #or perhaps the output file doesnt exist?  If this is the case, this isn't a good trap
+                            #but for now, add the flow to a known good nexus upstream of the terminal
+                            continue
+                        #TODO what happens if can't put the qlat anywhere?  Right now this silently ignores the issue...
+                    qlats_df.drop(tnx, inplace=True)
+                '''
 
-            '''
-            #For a terminal nexus, we want to include the lateral flow from the catchment contributing to that nexus
-            #one way to do that is to cheat and put that lateral flow at the upstream...this is probably the simplest way
-            #right now.  The other is to create a virtual channel segment downstream to "route" i.e accumulate into
-            #but it isn't clear right now how to do that with flow/velocity/depth requirements
-            #find the terminal nodes
-            for tnx, test_up in self._upstream_terminal.items():
-                #first need to ensure there is an upstream location to dump to
-                pdb.set_trace()
-                for nex in test_up:
-                    try:
-                        #FIXME if multiple upstreams exist in this case then a choice is to be made as to which it goes into
-                        #some cases the choice is easy cause the upstream doesn't exist, but in others, it may not be so simple
-                        #in such cases where multiple valid upstream nexuses exist, perhaps the mainstem should be used?
-                        pdb.set_trace()
-                        qlats_df.loc[up] += nexuses_lateralflows_df.loc[tnx]
-                        break #flow added, don't add it again!
-                    except KeyError:
-                        #this upstream doesn't actually exist on the network (maybe it is a headwater?)
-                        #or perhaps the output file doesnt exist?  If this is the case, this isn't a good trap
-                        #but for now, add the flow to a known good nexus upstream of the terminal
-                        continue
-                    #TODO what happens if can't put the qlat anywhere?  Right now this silently ignores the issue...
-                qlats_df.drop(tnx, inplace=True)
-            '''
-
-            # The segment_index has the full network set of segments/flowpaths. 
-            # Whereas the set of flowpaths that are downstream of nexuses is a 
-            # subset of the segment_index. Therefore, all of the segments/flowpaths
-            # that are not accounted for in the set of flowpaths downstream of
-            # nexuses need to be added to the qlateral dataframe and padded with
-            # zeros.
-            all_df = pd.DataFrame( np.zeros( (len(self.segment_index), len(qlats_df.columns)) ), index=self.segment_index,
-                columns=qlats_df.columns )
-            all_df.loc[ qlats_df.index ] = qlats_df
-            qlats_df = all_df.sort_index()
+                # The segment_index has the full network set of segments/flowpaths. 
+                # Whereas the set of flowpaths that are downstream of nexuses is a 
+                # subset of the segment_index. Therefore, all of the segments/flowpaths
+                # that are not accounted for in the set of flowpaths downstream of
+                # nexuses need to be added to the qlateral dataframe and padded with
+                # zeros.
+                all_df = pd.DataFrame( np.zeros( (len(self.segment_index), len(qlats_df.columns)) ), index=self.segment_index,
+                    columns=qlats_df.columns )
+                all_df.loc[ qlats_df.index ] = qlats_df
+                qlats_df = all_df.sort_index()
 
         elif qlat_input_file:
             qlats_df = nhd_io.get_ql_from_csv(qlat_input_file)
@@ -881,7 +918,11 @@ class HYFeaturesNetwork(AbstractNetwork):
             'gages': self._gages,
             'usgs_lake_gage_crosswalk': self._usgs_lake_gage_crosswalk,
             'usace_lake_gage_crosswalk': self._usace_lake_gage_crosswalk,
-            'rfc_lake_gage_crosswalk': self._rfc_lake_gage_crosswalk
+            'rfc_lake_gage_crosswalk': self._rfc_lake_gage_crosswalk,
+            'duplicate_ids_df': self._duplicate_ids_df,
+            'gl_climatology_df': self._gl_climatology_df,
+            'poi_nex_dict': self._poi_nex_dict,
+            'nexus_dict': self._nexus_dict
         }
         np.save(
             Path(destination_folder).joinpath(output_filename),
@@ -911,6 +952,10 @@ class HYFeaturesNetwork(AbstractNetwork):
             self._usgs_lake_gage_crosswalk = inputs.get('usgs_lake_gage_crosswalk',None)
             self._usace_lake_gage_crosswalk = inputs.get('usace_lake_gage_crosswalk',None)
             self._rfc_lake_gage_crosswalk = inputs.get('rfc_lake_gage_crosswalk',None)
+            self._duplicate_ids_df = inputs.get('duplicate_ids_df',None)
+            self._gl_climatology_df = inputs.get('gl_climatology_df',None)
+            self._poi_nex_dict = inputs.get('poi_nex_dict',None)
+            self._nexus_dict = inputs.get('nexus_dict',None)
 
 
 def read_file(file_name):

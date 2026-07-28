@@ -12,15 +12,21 @@ build_routing=true
 build_config=true
 build_nwm=true
 
-if [ -z "$F90" ]
+
+if [ -z "$FC" ]
 then
-    export F90="gfortran"
-    echo "using F90=${F90}"
+    FC=gfortran
+    echo "FC environmental variable not set. Defaulting to FC=${FC}"
+else
+    echo "Using environmental Fortran compiler: FC=${FC}"
 fi
+
 if [ -z "$CC" ]
 then
-    export CC="gcc"
-    echo "using CC=${CC}"
+    CC=gcc
+    echo "CC environmental variable not set. Defaulting to CC=${CC}"
+else
+    echo "Using environmental C compiler: CC=${CC}"
 fi
 
 #preserve old/default behavior of installing packages with -e

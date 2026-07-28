@@ -430,6 +430,10 @@ class ForcingParameters(BaseModel):
     Value is in hours. To handle memory issues, t-route can divvy it's simulation time into chunks, reducing the amount 
     of forcing and data assimilation files it reads into memory at once. This is the size of those time loops.
     """
+    qlat_input_file: Optional[str] = None
+    """
+    Single q_lateral forcing file. If this parameter is provided, 'qlat_file_pattern_filter' is ignored.
+    """
     qlat_file_index_col: str = "feature_id"
     """
     Name of column containing flowpath/nexus IDs

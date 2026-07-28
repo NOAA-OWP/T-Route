@@ -53,7 +53,7 @@ T-Route represents streamflow channel routing and reservoir routing, assimilatin
 This program uses the following system packages:
 ```
 python3
-gcc-gfortran
+gcc-gfortran OR Intel compilers
 ```
 
 ... and the following non-default python modules:
@@ -89,8 +89,14 @@ pip3 install numpy pandas xarray netcdf4 joblib toolz pyyaml Cython>3,!=3.0.4 ge
 # clone t-toute
 git clone --progress --single-branch --branch master http://github.com/NOAA-OWP/T-Route.git
 
+## Installation Option 1 for direct installation using precompiled Python environment
 # compile and install
 ./compiler.sh
+
+## Installation Option 2 to install a virtual Python environment for t-route modules
+# compile and install
+./install.sh
+
 
 # execute a demonstration test with NHD network
 cd test/LowerColorado_TX
