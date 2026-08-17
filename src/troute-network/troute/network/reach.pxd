@@ -1,17 +1,18 @@
 cimport numpy as np
+from libc.stdint cimport int64_t
 """
 FIXME add some significant inline documentation
 """
 cdef extern from "reach_structs.h":
   ctypedef struct _MC_Levelpool:
-    int lake_number
+    int64_t lake_number
     float dam_length, area, max_depth;
     float orifice_area, orifice_coefficient, orifice_elevation;
     float weir_coefficient, weir_elevation, weir_length;
     float initial_fractional_depth, water_elevation;
     int wbody_type_code
   ctypedef struct _MC_Hybrid:
-    int lake_number
+    int64_t lake_number
     float dam_length, area, max_depth;
     float orifice_area, orifice_coefficient, orifice_elevation;
     float weir_coefficient, weir_elevation, weir_length;
@@ -24,7 +25,7 @@ cdef extern from "reach_structs.h":
     int observation_lookback_hours;
     int observation_update_time_interval_seconds;
   ctypedef struct _MC_RFC:
-    int lake_number
+    int64_t lake_number
     float dam_length, area, max_depth;
     float orifice_area, orifice_coefficient, orifice_elevation;
     float weir_coefficient, weir_elevation, weir_length;

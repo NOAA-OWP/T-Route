@@ -8,3 +8,4 @@ libs/*
 !*mc_reach_structs.c
 !*levelpool_structs.c
 !*reach_structs.c
+!*logger.c

@@ -1,11 +1,14 @@
-from pydantic import BaseModel, Field, validator
+import logging
+
+from pydantic import BaseModel, DirectoryPath, FilePath, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime
 
-from typing import Optional, List, Union
+from typing import Any, Dict, Optional, List, Union
 from typing_extensions import Literal
 
-from .types import FilePath, DirectoryPath
-from ._validators import coerce_datetime, coerce_none_to_default
+from ._validators import coerce_datetime
+
+LOG = logging.getLogger("TROUTE")
 
 
 # ---------------------------- Compute Parameters ---------------------------- #
@@ -20,54 +23,6 @@ ParallelComputeMethod = Literal[
 ]
 
 ComputeKernel = Literal["V02-structured", "diffusive", "diffusice_cnt"]
-
-
-class ComputeParameters(BaseModel):
-    """
-    Parameters specific to the routing simulation.
-    """
-    parallel_compute_method: ParallelComputeMethod = "by-network"
-    """
-    parallel computing scheme used during simulation, options below
-    - "serial": no parallelization
-    - "by-network": parallelization across independent drainage basins
-    - "by-subnetwork-jit": parallelization across subnetworks 
-    - "by-subnetwork-jit-clustered": parallelization across subnetworks, with clustering to optimize scaling
-    """
-    compute_kernel: ComputeKernel = "V02-structured"
-    """
-    routing engine used for simulation
-    - "V02-structured" - Muskingum Cunge
-    NOTE: There are two other options that were previously being developed for use with the diffusive kernel, 
-    but they are now depricated:
-    - "diffusive" - Diffusive with adaptive timestepping
-    - "diffusice_cnt" - Diffusive with CNT numerical solution
-    TODO: Remove these additional options? And this parameter altogether as there is only one option?
-    """
-    assume_short_ts: bool = False
-    """
-    If True the short timestep assumption used in WRF hyro is used. if False, the assumption is dropped.
-    """
-    subnetwork_target_size: int = 10000
-    """
-    The target number of segments per subnetwork, only needed for "by-subnetwork..." parallel schemes.
-    The magnitude of this parameter affects parallel scaling. This is to improve efficiency. Default value has 
-    been tested as the fastest for CONUS simultions. For smaller domains this can be reduced.
-    """
-    cpu_pool: Optional[int] = 1
-    """
-    Number of CPUs used for parallel computations
-    If parallel_compute_method is anything but 'serial', this determines how many cpus to use for parallel processing.
-    """
-    return_courant: bool = False
-    """
-    If True, Courant metrics are returnd with simulations. This only works for MC simulations
-    """
-
-    restart_parameters: "RestartParameters" = Field(default_factory=dict)
-    hybrid_parameters: "HybridParameters" = Field(default_factory=dict)
-    forcing_parameters: "ForcingParameters" = Field(default_factory=dict)
-    data_assimilation_parameters: "DataAssimilationParameters" = Field(default_factory=dict)
 
 
 # TODO: determine how to handle context specific required fields
@@ -148,9 +103,7 @@ class RestartParameters(BaseModel):
     """
     
 
-    _coerce_datetime = validator("start_datetime", pre=True, allow_reuse=True)(
-        coerce_datetime
-    )
+    _coerce_datetime = field_validator("start_datetime", mode="before")(coerce_datetime)
 
 
 # TODO: determine how to handle context specific required fields
@@ -285,6 +238,10 @@ class ReservoirPersistenceDA(BaseModel):
     """
     If True, Great Lakes will perform data assimilation.
     """
+    reservoir_persistence_usbr: bool = False
+    """
+    If True, USBR Reservoirs will perform data assimilation.
+    """
 
     crosswalk_usgs_gage_field: str = "usgs_gage_id"
     """
@@ -336,6 +293,48 @@ class ReservoirRfcParametersDisabled(BaseModel):
     reservoir_rfc_forecasts: Literal[False] = False
 
 
+class DiversionDA(BaseModel):
+    """
+    Parameters controlling diversion DA: a managed transfer of flow out of one
+    flowpath, measured by a streamgage, as at the Old River Control Structure.
+
+    The observed discharge is subtracted from the donor flowpath in the routing
+    kernel. The receiving river gains the same water through ordinary streamflow
+    nudging at the diversion gage, which sits on a headwater flowpath of the
+    receiving system, so ``streamflow_da.streamflow_nudging`` must be enabled for
+    the transfer to conserve mass.
+    """
+    diversion_gage_crosswalk: Dict[int, str] = {}
+    """
+    Donor flowpath ``fp_id`` -> site number of the gage measuring the diverted flow.
+
+    The full observed discharge is removed from the donor, which assumes the model
+    routes no flow of its own down the diversion path. That holds where the diversion
+    gage sits on a headwater flowpath, as it does at Old River. If it were ever mapped
+    to a gage with upstream contributing area, the correction would need to be the
+    observed discharge minus the simulated flow already leaving the donor, not the
+    observed discharge alone.
+
+    Mass is conserved except where the observed diversion exceeds the routed donor
+    flow: the donor is then floored at zero and gives up less than the receiving river
+    gains. Capping the transfer at the routed flow would require the donor's discharge
+    inside the receiving reach's compute job, which crosses the parallel
+    decomposition, so the condition is reported at WARNING with the volume involved
+    rather than enforced. It has not been observed over the available record.
+    """
+    persist_historical_median: bool = False
+    """
+    Fill gaps in the diversion gage record with hardcoded monthly climatology, so
+    forecast timesteps (which have no observations) still divert. Substituted values
+    are logged; they are climatology, not observations.
+
+    Despite the field name the stored values are monthly MEANS retrieved from NWIS
+    (``_DIVERSION_MONTHLY_MEANS`` in ``troute.DataAssimilation``), and they exist for
+    the Old River gage only. A diversion gage with no entry there is skipped with a
+    warning rather than filled.
+    """
+
+
 class ReservoirDA(BaseModel):
     """
     Parameters controlling reservoir DA.
@@ -351,7 +350,8 @@ class ReservoirDA(BaseModel):
     """
 
 
-class DataAssimilationParameters(BaseModel, extra='ignore'):
+class DataAssimilationParameters(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     """
     Parameters controlling data assimilation.
     """
@@ -364,6 +364,11 @@ class DataAssimilationParameters(BaseModel, extra='ignore'):
     """
     Directory path to usace timeslice files.
     NOTE: required for USACE reservoir DA
+    """
+    usbr_timeslices_folder: Optional[DirectoryPath] = None
+    """
+    Directory path to USBR timeslice files.
+    NOTE: required for USBR reservoir DA
     """
     canada_timeslices_folder: Optional[DirectoryPath] = None
     """
@@ -394,6 +399,7 @@ class DataAssimilationParameters(BaseModel, extra='ignore'):
     
     streamflow_da: StreamflowDA = None
     reservoir_da: Optional[ReservoirDA] = None
+    diversion_da: Optional[DiversionDA] = None
 
     qc_threshold: float = Field(1, ge=0, le=1)
     """
@@ -402,9 +408,42 @@ class DataAssimilationParameters(BaseModel, extra='ignore'):
     used for assimilation, even those markesd as very poor quality.
     """
 
-    _coerce_none_to_default = validator(
-        "timeslice_lookback_hours", "qc_threshold", pre=True, allow_reuse=True
-    )(coerce_none_to_default)
+    @model_validator(mode='before')
+    @classmethod
+    def coerce_none_to_default(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if values.get("qc_threshold") is None:
+            values["qc_threshold"] = 1
+        if values.get("timeslice_lookback_hours") is None:
+            values["timeslice_lookback_hours"] = 24
+        return values
+
+    @model_validator(mode='after')
+    def check_diversion_has_an_observation_source(self):
+        """A diversion needs the gage's discharge to reach the observation frame.
+
+        The kernel subtracts the observed diversion from the donor flowpath. Nothing
+        adds it to the receiving river in code: the gage sits on a headwater of the
+        receiving system, so imposing the observed discharge there routes the water
+        down through the existing topology. Either source populates that row,
+        ``streamflow_nudging`` from timeslices or ``persist_historical_median`` from
+        climatology, and both conserve the transfer.
+
+        With neither set the observation frame stays empty, the kernel map resolves
+        to nothing and the diversion silently does not happen, which is worth saying
+        out loud rather than leaving to be discovered in the output.
+        """
+        diversion = self.diversion_da
+        if diversion is None or not diversion.diversion_gage_crosswalk:
+            return self
+        nudging = bool(self.streamflow_da and self.streamflow_da.streamflow_nudging)
+        if not nudging and not diversion.persist_historical_median:
+            LOG.warning(
+                "diversion_da.diversion_gage_crosswalk is set but neither "
+                "streamflow_da.streamflow_nudging nor "
+                "diversion_da.persist_historical_median is enabled, so no discharge "
+                "is available at the diversion gage and no flow will be diverted."
+            )
+        return self
 
 
 class ForcingParameters(BaseModel):
@@ -421,6 +460,10 @@ class ForcingParameters(BaseModel):
     Time step size (seconds). Default is 5 mintues
     """
     qlat_input_folder: Optional[DirectoryPath] = None
+    et_input_folder: Optional[DirectoryPath] = None
+    """
+    Name of the directory where ET forcings are stored for channel loss
+    """
     nts: Optional[int] = 288
     """
     Number of timesteps. This value, multiplied by 'dt', gives the total simulation time in seconds.
@@ -452,6 +495,10 @@ class ForcingParameters(BaseModel):
     """
     Globbing file pattern to identify q_lateral forcing files.
     """
+    et_file_pattern_filter: Optional[str] = None
+    """
+    Globbing file pattern to identify ET forcing files.
+    """
 
     qlat_forcing_sets: Optional[List[QLateralForcingSet]] = None
     binary_nexus_file_folder: Optional[DirectoryPath] = None
@@ -469,7 +516,64 @@ class ForcingParameters(BaseModel):
     NOTE: Only used if running diffusive routing.
     """
 
+    ssout: float = 0.0
+    """
+    Parameter SSOUT specifies the sub-surface loss and is defined as the rate in CMS of sub-surface outflow along the stream channel.
+    """
 
-ComputeParameters.update_forward_refs()
-QLateralForcingSet.update_forward_refs()
-ReservoirRfcParameters.update_forward_refs()
+    peadj: float = 1.0 
+    """
+    When ET data are used the daily ET values can be adjusted with a constant adjustment factor (PEADJ). This is calibratable
+    """
+
+class ComputeParameters(BaseModel):
+    """
+    Parameters specific to the routing simulation.
+    """
+    parallel_compute_method: ParallelComputeMethod = "by-network"
+    """
+    parallel computing scheme used during simulation, options below
+    - "serial": no parallelization
+    - "by-network": parallelization across independent drainage basins
+    - "by-subnetwork-jit": parallelization across subnetworks 
+    - "by-subnetwork-jit-clustered": parallelization across subnetworks, with clustering to optimize scaling
+    """
+    compute_kernel: ComputeKernel = "V02-structured"
+    """
+    routing engine used for simulation
+    - "V02-structured" - Muskingum Cunge
+    NOTE: There are two other options that were previously being developed for use with the diffusive kernel, 
+    but they are now depricated:
+    - "diffusive" - Diffusive with adaptive timestepping
+    - "diffusice_cnt" - Diffusive with CNT numerical solution
+    TODO: Remove these additional options? And this parameter altogether as there is only one option?
+    """
+    assume_short_ts: bool = False
+    """
+    If True the short timestep assumption used in WRF hyro is used. if False, the assumption is dropped.
+    """
+    subnetwork_target_size: int = 10000
+    """
+    The target number of segments per subnetwork, only needed for "by-subnetwork..." parallel schemes.
+    The magnitude of this parameter affects parallel scaling. This is to improve efficiency. Default value has 
+    been tested as the fastest for CONUS simultions. For smaller domains this can be reduced.
+    """
+    cpu_pool: Optional[int] = 1
+    """
+    Number of CPUs used for parallel computations
+    If parallel_compute_method is anything but 'serial', this determines how many cpus to use for parallel processing.
+    """
+    return_courant: bool = False
+    """
+    If True, Courant metrics are returnd with simulations. This only works for MC simulations
+    """
+
+    restart_parameters: RestartParameters = Field(default_factory=RestartParameters)
+    hybrid_parameters: HybridParameters = Field(default_factory=HybridParameters)
+    forcing_parameters: ForcingParameters = Field(default_factory=ForcingParameters)
+    data_assimilation_parameters: DataAssimilationParameters = Field(default_factory=DataAssimilationParameters)
+
+
+ComputeParameters.model_rebuild()
+QLateralForcingSet.model_rebuild()
+ReservoirRfcParameters.model_rebuild()

@@ -79,3 +79,39 @@ bower_components/
 .grunt/
 src/vendor/
 dist/
+
+# Build dirs #
+##############
+build/
+uv.lock
+output/
+
+# .vscode files #
+#################
+.vscode/
+
+# UV lock #
+###########
+uv.lock
+
+# data #
+########
+data/
+output/
+*.gif
+test/nhf/*/*/*.csv
+test/nhf/*/*/*.nc
+test/nhf/four_lakes/reservoir_da/*/*.ncdf
+benchmark/conus_lakes/channel_forcing/*.nc
+
+# development #
+###############
+dev/
+
+# Benchmark run artifacts. bench_da.py writes here by default; these are large
+# netCDF outputs and machine-specific timings, never source.
+benchmark/output_bench_da/
+benchmark/figures/bench_da_*.json
+# A trailing slash matches directories only, so the `data/` rule above does not
+# cover a symlink named data. Local benchmark datasets are often symlinked in.
+benchmark/data

@@ -11,7 +11,8 @@ import re
 import time
 import logging
 
-LOG = logging.getLogger('')
+LOG = logging.getLogger("TROUTE")
+
 from troute.routing.fast_reach.reservoir_RFC_da import _validate_RFC_data
 
 from troute.network import bmi_array2df as a2df
@@ -19,6 +20,25 @@ from troute.network import bmi_array2df as a2df
 # set legacy run flag: option to pass data frames through BMI formalism 
 # not to be used in regular BMI runs any longer, only for debugging
 legacy_bmi_df = False
+
+# Old River Control Structure diversion fallback values
+# Retrieved from NWIS on 7/14/26
+_DIVERSION_MONTHLY_MEANS = {
+    '07381482': {
+        1:  3220,
+        2:  3180,
+        3:  3080,
+        4:  5750,
+        5:  3960,
+        6:  4160,
+        7:  3140,
+        8:  3040,
+        9:  1980,
+        10: 1680,
+        11: 1980,
+        12: 3070,
+    }
+}
 
 # -----------------------------------------------------------------------------
 # Abstract DA Class:
@@ -31,9 +51,10 @@ class AbstractDA(ABC):
     combined into a single DataAssimilation object without getting a 
     'multiple-inheritance' error.
     """
-    __slots__ = ["_usgs_df", "_last_obs_df", "_da_parameter_dict",
+    __slots__ = ["_usgs_df", "_usbr_df", "_last_obs_df", "_da_parameter_dict",
                  "_reservoir_usgs_df", "_reservoir_usgs_param_df", 
                  "_reservoir_usace_df", "_reservoir_usace_param_df",
+                 "_reservoir_usbr_df", "_reservoir_usbr_param_df", 
                  "_reservoir_rfc_df", "_reservoir_rfc_synthetic",
                  "_reservoir_rfc_param_df", "_great_lakes_df", "_great_lakes_param_df",
                  "_dateNull", 
@@ -96,6 +117,7 @@ class NudgingDA(AbstractDA):
 
         self._last_obs_df = pd.DataFrame()
         self._usgs_df = pd.DataFrame()
+        self._usbr_df = pd.DataFrame()
         self._canada_df = pd.DataFrame()
         self._canada_is_created = False  
         usgs_df = pd.DataFrame()
@@ -213,9 +235,20 @@ class NudgingDA(AbstractDA):
                     self._last_obs_df = _reindex_link_to_lake_id(self._last_obs_df, network.link_lake_crosswalk)
                 
                 self._usgs_df = _create_usgs_df(data_assimilation_parameters, streamflow_da_parameters, run_parameters, network, da_run)
-                if ('canada_timeslice_files' in da_run) & (not network.canadian_gage_df.empty):
+                if ('canada_timeslice_files' in da_run) and (not network.canadian_gage_df.empty):
                     self._canada_df = _create_canada_df(data_assimilation_parameters, streamflow_da_parameters, run_parameters, network, da_run)
-                    self._canada_is_created = True                    
+                    self._canada_is_created = True
+
+        # Fill diversion gage rows with historical monthly medians where real observations are absent.
+        # Real observations always take priority; this only fills NaN gaps (or creates the row if missing).
+        diversion_da_parameters = data_assimilation_parameters.get('diversion_da', {}) or {}
+        if diversion_da_parameters.get('persist_historical_median', False):
+            self._usgs_df = _fill_diversion_historical_median(
+                self._usgs_df,
+                diversion_da_parameters,
+                network,
+                run_parameters,
+            )
         LOG.debug("NudgingDA class is completed in %s seconds." % (time.time() - main_start_time))
         
     def update_after_compute(self, run_results, time_increment):
@@ -272,10 +305,28 @@ class NudgingDA(AbstractDA):
         
         if streamflow_da_parameters.get('streamflow_nudging', False):
             self._usgs_df = _create_usgs_df(data_assimilation_parameters, streamflow_da_parameters, run_parameters, network, da_run)
-            if ('canada_timeslice_files' in da_run) & (not network.canadian_gage_df.empty):
+            if ('canada_timeslice_files' in da_run) and (not network.canadian_gage_df.empty):
                 self._canada_df = _create_canada_df(data_assimilation_parameters, streamflow_da_parameters, run_parameters, network, da_run)
             else:
                 self._canada_df = pd.DataFrame()
+
+        # Re-apply historical median fill for next loop iteration
+        diversion_da_parameters = data_assimilation_parameters.get('diversion_da', {}) or {}
+        if diversion_da_parameters.get('persist_historical_median', False):
+            if not (streamflow_da_parameters or {}).get('streamflow_nudging', False):
+                # With nudging off this frame holds only the diversion gage's rows and
+                # nothing above rebuilt it, so leaving it in place froze the run on the
+                # FIRST loop's columns: the kernel restarts its timestep index at zero
+                # each loop, so every later loop re-read loop one's values and a run
+                # spanning several months kept diverting the first month's climatology.
+                # Clearing it makes the fill rebuild the index at the advanced t0.
+                self._usgs_df = pd.DataFrame()
+            self._usgs_df = _fill_diversion_historical_median(
+                self._usgs_df,
+                diversion_da_parameters,
+                network,
+                run_parameters,
+            )
 
 
 class PersistenceDA(AbstractDA):
@@ -295,9 +346,11 @@ class PersistenceDA(AbstractDA):
         # check if user explictly requests USGS and/or USACE reservoir DA
         usgs_persistence  = False
         usace_persistence = False
+        usbr_persistence = False
         if reservoir_da_parameters:
             usgs_persistence  = reservoir_da_parameters.get('reservoir_persistence_usgs', False)
             usace_persistence = reservoir_da_parameters.get('reservoir_persistence_usace', False)
+            usbr_persistence = reservoir_da_parameters.get('reservoir_persistence_usbr', False)
 
         #--------------------------------------------------------------------------------
         # Assemble Reservoir dataframes
@@ -306,6 +359,8 @@ class PersistenceDA(AbstractDA):
         reservoir_usgs_param_df = pd.DataFrame()
         reservoir_usace_df = pd.DataFrame()
         reservoir_usace_param_df = pd.DataFrame()
+        reservoir_usbr_df = pd.DataFrame()
+        reservoir_usbr_param_df = pd.DataFrame()
 
         if not from_files:
 
@@ -435,12 +490,88 @@ class PersistenceDA(AbstractDA):
                     reservoir_usace_param_df['persistence_index'] = 0
                 else:
                     reservoir_usace_param_df = pd.DataFrame()
+            
+            if usbr_persistence:
+
+                # USBR observations, gage-indexed, before the lake crosswalk is applied.
+                # Defined on every branch so the join below cannot raise NameError.
+                usbr_station_df = pd.DataFrame()
+
+                if (legacy_bmi_df):
+
+                    # THIS LINE WAS REPLACED BY THE BMI TRANSPORT STUFF
+                    usbr_station_df = value_dict['reservoir_usbr_df']
+
+                else:
+
+                    usbr_reservoir_Array = value_dict['usbr_reservoir_Array']
+                    if len(usbr_reservoir_Array) >0:
+
+                        dateNull = value_dict['dateNull']    
+
+                        datesSecondsArray_reservoir_usbr = value_dict['datesSecondsArray_reservoir_usbr']
+                        nDates_reservoir_usbr = value_dict['nDates_reservoir_usbr']
+                        stationArray_reservoir_usbr = value_dict['stationArray_reservoir_usbr']
+                        stationStringLengthArray_reservoir_usbr = value_dict['stationStringLengthArray_reservoir_usbr']
+                        nStations_reservoir_usbr = value_dict['nStations_reservoir_usbr']
+ 
+                        # Unflatten the arrays
+                        df_raw_reservoirUsbr = a2df._unflatten_array(\
+                                        usbr_reservoir_Array,\
+                                        nDates_reservoir_usbr,\
+                                        nStations_reservoir_usbr)
+
+                        # Decode time/date axis
+                        timeAxisName = 'time'
+                        freqString = '15T'
+                        df_withDates_reservoirUsbr = a2df._time_retrieve_from_arrays(\
+                                df_raw_reservoirUsbr, dateNull, \
+                                datesSecondsArray_reservoir_usbr, \
+                                timeAxisName, freqString)
+
+                        # Decode station ID axis
+                        stationAxisName = 'stationId'
+                        usbr_station_df = a2df._stations_retrieve_from_arrays\
+                                (df_withDates_reservoirUsbr, stationArray_reservoir_usbr, \
+                                stationStringLengthArray_reservoir_usbr, stationAxisName)
+
+                # Join the USBR observations decoded just above, NOT reservoir_usgs_df.
+                # Joining the USGS frame here assimilated USGS discharge into USBR
+                # reservoirs (or produced no USBR observations at all when the two gage
+                # sets did not overlap).
+                reservoir_usbr_df = (
+                    network.usbr_lake_gage_crosswalk.
+                    reset_index().
+                    set_index('usbr_gage_id').
+                    join(usbr_station_df).
+                    set_index('usbr_lake_id')
+                    )
+
+                self._usbr_df = _reindex_link_to_lake_id(self._usbr_df, network.link_lake_crosswalk)
+                
+                # create reservoir persistence DA initial parameters dataframe    
+                if not reservoir_usbr_df.empty:
+                    reservoir_usbr_param_df = pd.DataFrame(
+                    data = 0, 
+                    index = reservoir_usbr_df.index ,
+                        columns = ['update_time']
+                    )
+                    reservoir_usbr_param_df['prev_persisted_outflow'] = np.nan
+                    reservoir_usbr_param_df['persistence_update_time'] = 0
+                    reservoir_usbr_param_df['persistence_index'] = 0
+                else:
+                    reservoir_usbr_param_df = pd.DataFrame()
                 
         else:
 
             if usgs_persistence:
-                # if usgs_df is already created, make reservoir_usgs_df from that rather than reading in data again
-                if not self._usgs_df.empty: 
+                # if usgs_df is already created, make reservoir_usgs_df from that rather than reading in data again.
+                # Gate on nudging actually being on, not merely on the frame being
+                # non-empty: with nudging off the diversion's climatological fill also
+                # populates this frame, and it holds only the diversion gage's row, so
+                # taking this shortcut derived reservoir observations from it and left
+                # USGS reservoir persistence with nothing.
+                if (streamflow_da_parameters or {}).get('streamflow_nudging', False) and not self._usgs_df.empty:
                     
                     gage_lake_df = (
                         network.usgs_lake_gage_crosswalk.
@@ -530,11 +661,89 @@ class PersistenceDA(AbstractDA):
             else:
                 reservoir_usace_df = pd.DataFrame()
                 reservoir_usace_param_df = pd.DataFrame()
+            
+            if usbr_persistence:
+                # if usbr_df is already created, make reservoir_usbr_df from that rather than reading in data again
+                if not self._usbr_df.empty: 
+                    
+                    gage_lake_df = (
+                        network.usbr_lake_gage_crosswalk
+                        .reset_index()
+                        .set_index(['usbr_gage_id']) # <- TODO use input parameter for this
+                    )
+                    
+                    # build dataframe that crosswalks gageIDs to segmentIDs
+                    gage_link_df = (
+                        network.link_gage_df['gages'].
+                        reset_index().
+                        set_index(['gages'])
+                    )
+                    
+                    # build dataframe that crosswalks segmentIDs to lakeIDs
+                    link_lake_df = (
+                        gage_lake_df.
+                        join(gage_link_df, how = 'inner').
+                        reset_index().set_index('link').
+                        drop(['index'], axis = 1)
+                    )
+
+                    # resample `usbr_df` to 15 minute intervals
+                    usbr_df_15min = (
+                        self._usbr_df.
+                        transpose().
+                        resample('15min').asfreq().
+                        transpose()
+                    )                     
+                    
+                    # subset and re-index `usbr_df`, using the segID <> lakeID crosswalk
+                    reservoir_usbr_df = (
+                        usbr_df_15min.join(link_lake_df, how = 'inner').
+                        reset_index(drop=True).
+                        set_index('usbr_lake_id')
+                    )
+                    
+                    # replace link ids with lake ids, for gages at waterbody outlets, 
+                    # otherwise, gage data will not be assimilated at waterbody outlet
+                    # segments.
+                    if network.link_lake_crosswalk:
+                        self._usbr_df = _reindex_link_to_lake_id(self._usbr_df, network.link_lake_crosswalk)
+            
+                    # create reservoir hybrid DA initial parameters dataframe    
+                    if not reservoir_usbr_df.empty:
+                        reservoir_usbr_param_df = pd.DataFrame(
+                            data = 0, 
+                            index = reservoir_usbr_df.index ,
+                            columns = ['update_time']
+                        )
+                        reservoir_usbr_param_df['prev_persisted_outflow'] = np.nan
+                        reservoir_usbr_param_df['persistence_update_time'] = 0
+                        reservoir_usbr_param_df['persistence_index'] = 0
+                    else:
+                        reservoir_usbr_param_df = pd.DataFrame()
+                    
+                else:
+                    (
+                        reservoir_usbr_df,
+                        reservoir_usbr_param_df
+                    ) = _create_reservoir_df(
+                        data_assimilation_parameters,
+                        reservoir_da_parameters,
+                        streamflow_da_parameters,
+                        run_parameters,
+                        network,
+                        da_run,
+                        lake_gage_crosswalk = network.usbr_lake_gage_crosswalk,
+                        res_source = 'usbr')
+            else:
+                reservoir_usbr_df = pd.DataFrame()
+                reservoir_usbr_param_df = pd.DataFrame()
         
         self._reservoir_usgs_df = reservoir_usgs_df
         self._reservoir_usgs_param_df = reservoir_usgs_param_df
         self._reservoir_usace_df = reservoir_usace_df
         self._reservoir_usace_param_df = reservoir_usace_param_df
+        self._reservoir_usbr_df = reservoir_usbr_df
+        self._reservoir_usbr_param_df = reservoir_usbr_param_df
 
         # Trim the time-extent of the streamflow_da usgs_df
         # what happens if there are timeslice files missing on the front-end? 
@@ -568,9 +777,10 @@ class PersistenceDA(AbstractDA):
         - data_assimilation               (Object): Object containing all data assimilation information
             - reservoir_usgs_param_df  (DataFrame): USGS reservoir DA parameters
             - reservoir_usace_param_df (DataFrame): USACE reservoir DA parameters
+            - reservoir_usbr_param_df (DataFrame): USBR reservoir DA parameters
         '''
         # get reservoir DA initial parameters for next loop itteration
-        self._reservoir_usgs_param_df, self._reservoir_usace_param_df = _set_persistence_reservoir_da_params(run_results)
+        self._reservoir_usgs_param_df, self._reservoir_usace_param_df,  self._reservoir_usbr_param_df = _set_persistence_reservoir_da_params(run_results)
 
     def update_for_next_loop(self, network, da_run,):
         '''
@@ -596,7 +806,9 @@ class PersistenceDA(AbstractDA):
         streamflow_da_parameters = data_assimilation_parameters.get('streamflow_da', {})
         reservoir_da_parameters = data_assimilation_parameters.get('reservoir_da', {})
         
-        if not self.usgs_df.empty:
+        # Same gate as in __init__: the diversion's climatological fill can make this
+        # frame non-empty while holding only the diversion gage's row.
+        if (streamflow_da_parameters or {}).get('streamflow_nudging', False) and not self.usgs_df.empty:
 
             if reservoir_da_parameters.get('reservoir_persistence_da',{}).get('reservoir_persistence_usgs', False):
                 
@@ -642,7 +854,12 @@ class PersistenceDA(AbstractDA):
                 if network.link_lake_crosswalk:
                     self._usgs_df = _reindex_link_to_lake_id(self.usgs_df, network.link_lake_crosswalk)
         
-        elif reservoir_da_parameters.get('reservoir_persistence_usgs', False):
+        # reservoir_persistence_usgs lives under reservoir_persistence_da, the same
+        # nesting the USACE branch below reads. Looked up one level too high this
+        # branch never fired, so whenever the frame above was not refreshed the
+        # type-2 reservoir observations stayed frozen on the first window's values
+        # while the kernel kept recomputing offsets against the current t0.
+        elif reservoir_da_parameters.get('reservoir_persistence_da', {}).get('reservoir_persistence_usgs', False):
             (
                 self._reservoir_usgs_df,
                 _,
@@ -660,7 +877,7 @@ class PersistenceDA(AbstractDA):
             # otherwise, gage data will not be assimilated at waterbody outlet
             # segments.
             if network.link_lake_crosswalk:
-                usgs_df = _reindex_link_to_lake_id(usgs_df, network.link_lake_crosswalk)
+                self._usgs_df = _reindex_link_to_lake_id(self.usgs_df, network.link_lake_crosswalk)
         
         # USACE
         if reservoir_da_parameters.get('reservoir_persistence_da').get('reservoir_persistence_usace', False):
@@ -677,8 +894,25 @@ class PersistenceDA(AbstractDA):
                 da_run,
                 lake_gage_crosswalk = network.usace_lake_gage_crosswalk,
                 res_source = 'usace')
-        
-        # if there are no TimeSlice files available for hybrid reservoir DA in the next loop, 
+
+        # USBR. Without this, type-7 reservoirs kept the first window's observations
+        # for the whole run: the next loop's usbr timeslices were never read.
+        if reservoir_da_parameters.get('reservoir_persistence_da').get('reservoir_persistence_usbr', False):
+
+            (
+                self._reservoir_usbr_df,
+                _,
+            ) = _create_reservoir_df(
+                data_assimilation_parameters,
+                reservoir_da_parameters,
+                streamflow_da_parameters,
+                run_parameters,
+                network,
+                da_run,
+                lake_gage_crosswalk = network.usbr_lake_gage_crosswalk,
+                res_source = 'usbr')
+
+        # if there are no TimeSlice files available for hybrid reservoir DA in the next loop,
         # but there are DA parameters from the previous loop, then create a
         # dummy observations df. This allows the reservoir persistence to continue across loops.
         # USGS Reservoirs
@@ -691,12 +925,23 @@ class PersistenceDA(AbstractDA):
                         columns = [network.t0]
                     )
 
-            # USACE Reservoirs   
+            # USACE Reservoirs
             if 3 in network.waterbody_types_dataframe['reservoir_type'].unique():
                 if self.reservoir_usace_df.empty and len(self.reservoir_usace_param_df.index) > 0:
                     self._reservoir_usace_df = pd.DataFrame(
-                        data    = np.nan, 
-                        index   = self.reservoir_usace_param_df.index, 
+                        data    = np.nan,
+                        index   = self.reservoir_usace_param_df.index,
+                        columns = [network.t0]
+                    )
+
+            # USBR Reservoirs. Same continuation rule as USGS and USACE above: with
+            # no timeslices this loop but persistence state carried from the last
+            # one, a dummy frame lets that persistence continue instead of stalling.
+            if 7 in network.waterbody_types_dataframe['reservoir_type'].unique():
+                if self.reservoir_usbr_df.empty and len(self.reservoir_usbr_param_df.index) > 0:
+                    self._reservoir_usbr_df = pd.DataFrame(
+                        data    = np.nan,
+                        index   = self.reservoir_usbr_param_df.index,
                         columns = [network.t0]
                     )
 
@@ -774,13 +1019,13 @@ class great_lake(AbstractDA):
         # get reservoir DA initial parameters for next loop iteration
         great_lakes_param_df = pd.DataFrame()
         tmp_list = []
-        for r in run_results:
+        for r in run_results:   # Corresponds to the ordering of the outflows from line 843 troute/routing/fast_reach/mc_reach.pyx
             
-            if len(r[9][0]) > 0:
-                tmp_df = pd.DataFrame(data = r[9][0], columns = ['lake_id'])
-                tmp_df['previous_assimilated_outflows'] = r[9][1]
-                tmp_df['previous_assimilated_time'] = r[9][2]
-                tmp_df['update_time'] = r[9][3]
+            if len(r[10][0]) > 0:
+                tmp_df = pd.DataFrame(data = r[10][0], columns = ['lake_id'])
+                tmp_df['previous_assimilated_outflows'] = r[10][1]
+                tmp_df['previous_assimilated_time'] = r[10][2]
+                tmp_df['update_time'] = r[10][3]
                 tmp_list.append(tmp_df)
         
         if tmp_list:
@@ -1021,6 +1266,10 @@ class DataAssimilation(NudgingDA, PersistenceDA, RFCDA):
     @property
     def usgs_df(self):
         return self._usgs_df
+
+    @property
+    def usbr_df(self):
+        return self._usbr_df
     
     @property
     def reservoir_usgs_df(self):
@@ -1037,6 +1286,14 @@ class DataAssimilation(NudgingDA, PersistenceDA, RFCDA):
     @property
     def reservoir_usace_param_df(self):
         return self._reservoir_usace_param_df
+    
+    @property
+    def reservoir_usbr_df(self):
+        return self._reservoir_usbr_df
+    
+    @property
+    def reservoir_usbr_param_df(self):
+        return self._reservoir_usbr_param_df
     
     @property
     def reservoir_rfc_df(self):
@@ -1058,6 +1315,100 @@ class DataAssimilation(NudgingDA, PersistenceDA, RFCDA):
 # --------------------------------------------------------------
 # Helper functions
 # --------------------------------------------------------------
+
+
+def _fill_diversion_historical_median(
+    usgs_df: pd.DataFrame,
+    diversion_da_parameters: dict,
+    network,
+    run_parameters: dict,
+) -> pd.DataFrame:
+    """Fill nan values in usgs_df for diversion gages (if necessary)."""
+    diversion_gage_crosswalk = diversion_da_parameters.get(
+        "diversion_gage_crosswalk", {}
+    )
+    if not diversion_gage_crosswalk:
+        return usgs_df
+
+    # Build time columns if usgs_df has none (nudging is off)
+    if usgs_df.empty or usgs_df.shape[1] == 0:
+        t0 = network.t0
+        dt = run_parameters.get("dt", 300)  # seconds
+        nts = run_parameters.get("nts", 0)
+        # One column per ROUTING timestep, not a fixed 5-minute grid. The kernel
+        # indexes this frame as usgs_values[gage_i, timestep], where timestep is the
+        # routing step, so a 5-minute grid only lines up when dt happens to be 300.
+        # With dt=60 the columns ran out about a fifth of the way through the run;
+        # with dt=900 the timestamps advanced three times too slowly.
+        n_obs = max(1, nts + 1)
+        time_index = pd.date_range(t0, periods=n_obs, freq=pd.Timedelta(seconds=dt))
+        usgs_df = pd.DataFrame(
+            index=pd.Index([], dtype="int64"), columns=time_index, dtype=float
+        )
+
+    diversion_site_to_node: dict[str, int] = getattr(
+        network, "_diversion_site_to_node", {}
+    )
+
+    # crosswalk maps fp_id (int) -> site_no (str)
+    for fp_id, gage_id in diversion_gage_crosswalk.items():
+        gage_id = str(gage_id)
+        if gage_id not in diversion_site_to_node:
+            # Happens when the gage never resolved to a routing link, e.g. the
+            # network carries no waterbodies and preprocessing returned early.
+            # Filling would raise KeyError, and silently skipping would leave the
+            # donor subtraction running with no fallback.
+            LOG.warning(
+                "persist_historical_median: gage %s has no routing link; the "
+                "diversion for flowpath %s will not be applied.", gage_id, fp_id,
+            )
+            continue
+        link_id = int(diversion_site_to_node[gage_id])
+
+        monthly_means = _DIVERSION_MONTHLY_MEANS.get(gage_id)
+        if monthly_means is None:
+            LOG.warning(
+                "persist_historical_median: no monthly means defined for gage %s - skipping.",
+                gage_id,
+            )
+            continue
+
+        # Fill value at each column using the monthly median by calendar month.
+        historical = pd.Series(
+            {col: monthly_means[col.month] for col in usgs_df.columns},
+            dtype=float,
+        )
+
+        # Get the existing row or create a blank one.
+        if link_id in usgs_df.index:
+            row = usgs_df.loc[link_id].copy()
+        else:
+            row = pd.Series(np.nan, index=usgs_df.columns, dtype=float)
+
+        nan_mask = row.isna()
+        if nan_mask.any():
+            row[nan_mask] = historical[nan_mask]
+            # A substituted climatological value is not an observation. Say so, and
+            # say how much of the window it covers, so an operator can tell a short
+            # gap from a sustained gage outage being papered over indefinitely.
+            n_filled = int(nan_mask.sum())
+            n_total = int(len(nan_mask))
+            LOG.warning(
+                "persist_historical_median: gage %s substituted monthly climatology "
+                "for %d of %d timesteps (%.0f%%) in this window; these are not "
+                "observations", gage_id, n_filled, n_total, 100.0 * n_filled / n_total,
+            )
+
+        if link_id in usgs_df.index:
+            usgs_df.loc[link_id] = row
+        else:
+            new_row = row.to_frame().T
+            new_row.index = pd.Index([link_id], dtype="int64")
+            usgs_df = pd.concat([usgs_df, new_row])
+
+    return usgs_df
+
+
 def _reindex_link_to_lake_id(target_df, crosswalk):
     '''
     Utility function for replacing link ID index values
@@ -1125,8 +1476,16 @@ def _create_usgs_df(data_assimilation_parameters, streamflow_da_parameters, run_
     qc_threshold           = data_assimilation_parameters.get("qc_threshold",1)
     interpolation_limit    = data_assimilation_parameters.get("interpolation_limit_min",59)
     LOG.info("Reading and preprocessing usgs timeslice files is started.")
-    usgs_df_start_time = time.time()    
+    usgs_df_start_time = time.time()
     # TODO: join timeslice folder and files into complete path upstream
+    if usgs_timeslices_folder is None:
+        raise ValueError(
+            "streamflow_da.streamflow_nudging is enabled but "
+            "streamflow_da.usgs_timeslices_folder is not set, so there is nowhere to "
+            "read gage observations from. Set the folder, or disable nudging. "
+            "(Without this check the run failed inside pathlib with a TypeError about "
+            "NoneType, which gave no indication of the missing setting.)"
+        )
     usgs_timeslices_folder = pathlib.Path(usgs_timeslices_folder)
     usgs_files = [usgs_timeslices_folder.joinpath(f) for f in 
                   da_run['usgs_timeslice_files']]
@@ -1250,7 +1609,7 @@ def _create_canada_df(data_assimilation_parameters, streamflow_da_parameters, ru
 
 def _create_reservoir_df(data_assimilation_parameters, reservoir_da_parameters, streamflow_da_parameters, run_parameters, network, da_run, lake_gage_crosswalk, res_source):
     '''
-    Function for reading USGS/USACE timeslice files and creating a dataframe
+    Function for reading USGS/USACE/USBR timeslice files and creating a dataframe
     of reservoir observations and initial parameters. 
     These dataframes are used for reservoir DA.
     
@@ -1263,15 +1622,15 @@ def _create_reservoir_df(data_assimilation_parameters, reservoir_da_parameters, 
     - network                    (Object): network object created from abstract class
     - da_run                       (list): list of data assimilation files separated
                                            by for loop chunks
-    - lake_gage_crosswalk          (dict): usgs/usace gage ids and corresponding segment ids at
+    - lake_gage_crosswalk          (dict): usgs/usace/usbr gage ids and corresponding segment ids at
                                            which they are located
-    - res_source                    (str): either 'usgs' or 'usace', specifiying which type of
+    - res_source                    (str): either 'usgs', 'usace', or 'usbr', specifiying which type of
                                            reservoir dataframe to create (must match lake_gage_crosswalk
     
     Returns:
     --------
-    - reservoir_usgs/usace_df       (DataFrame): USGS/USACE reservoir observations
-    - reservoir_usgs/usace_param_df (DataFrame): USGS/USACE reservoir hybrid DA initial parameters
+    - reservoir_usgs/usace/usbr_df       (DataFrame): USGS/USACE reservoir observations
+    - reservoir_usgs/usace/usbr_param_df (DataFrame): USGS/USACE reservoir hybrid DA initial parameters
     '''
     res_timeslices_folder  = data_assimilation_parameters.get(res_source + "_timeslices_folder",None)
     crosswalk_file         = reservoir_da_parameters.get("gage_lakeID_crosswalk_file", None)
@@ -1352,8 +1711,15 @@ def _set_persistence_reservoir_da_params(run_results):
                                                'persistence_update_time', 'persistence_index'
                                            ]
                                           )
+    reservoir_usbr_param_df = pd.DataFrame(data = [], 
+                                           index = [], 
+                                           columns = [
+                                               'update_time', 'prev_persisted_outflow', 
+                                               'persistence_update_time', 'persistence_index'
+                                           ]
+                                          )
     
-    for r in run_results:
+    for r in run_results:   # Corresponds to the ordering of the outflows from line 843 troute/routing/fast_reach/mc_reach.pyx
         
         if len(r[4][0]) > 0:
             tmp_usgs = pd.DataFrame(data = r[4][1], index = r[4][0], columns = ['update_time'])
@@ -1369,7 +1735,28 @@ def _set_persistence_reservoir_da_params(run_results):
             tmp_usace['persistence_index'] = r[5][3]
             reservoir_usace_param_df = pd.concat([reservoir_usace_param_df, tmp_usace])
     
-    return reservoir_usgs_param_df, reservoir_usace_param_df
+        if len(r[6][0]) > 0:
+            tmp_usbr = pd.DataFrame(data = r[6][1], index = r[6][0], columns = ['update_time'])
+            tmp_usbr['prev_persisted_outflow'] = r[6][2]
+            tmp_usbr['persistence_update_time'] = r[6][4]
+            tmp_usbr['persistence_index'] = r[6][3]
+            reservoir_usbr_param_df = pd.concat([reservoir_usbr_param_df, tmp_usbr])
+
+    # A reservoir that sits on a sub-domain boundary appears as an
+    # offnetwork upstream in a downstream compute job AND as a home reach
+    # in its own job.  Both jobs run the reservoir through the DA kernel
+    # and emit results, so pd.concat above produces duplicate index entries.
+    # On the next loop iteration _prep_reservoir_da_dataframes calls
+    # .loc[lake_id].to_numpy() and gets a 2-row result for a 1-element
+    # index, causing a shape mismatch when the kernel output is unpacked.
+    # Deduplicate by keeping the last entry for each lake (both duplicates
+    # carry the same computed state, so the choice of first vs. last is
+    # inconsequential).
+    reservoir_usgs_param_df  = reservoir_usgs_param_df[~reservoir_usgs_param_df.index.duplicated(keep='last')]
+    reservoir_usace_param_df = reservoir_usace_param_df[~reservoir_usace_param_df.index.duplicated(keep='last')]
+    reservoir_usbr_param_df  = reservoir_usbr_param_df[~reservoir_usbr_param_df.index.duplicated(keep='last')]
+
+    return reservoir_usgs_param_df, reservoir_usace_param_df, reservoir_usbr_param_df
 
 def _set_rfc_reservoir_da_params(reservoir_rfc_param_df, run_results):
     '''
@@ -1390,11 +1777,11 @@ def _set_rfc_reservoir_da_params(reservoir_rfc_param_df, run_results):
     --------
     - reservoir_rfc_param_df (DataFrame): RFC reservoir DA parameters (updated)
     '''
-    for r in run_results:
-        if len(r[7][0]) > 0:
-            rfc_idx = r[7][0]
-            reservoir_rfc_param_df.loc[rfc_idx, 'update_time'] = r[7][1]
-            reservoir_rfc_param_df.loc[rfc_idx, 'timeseries_idx'] = r[7][2]
+    for r in run_results:   # Corresponds to the ordering of the outflows from line 843 troute/routing/fast_reach/mc_reach.pyx
+        if len(r[8][0]) > 0:
+            rfc_idx = r[8][0]
+            reservoir_rfc_param_df.loc[rfc_idx, 'update_time'] = r[8][1]
+            reservoir_rfc_param_df.loc[rfc_idx, 'timeseries_idx'] = r[8][2]
     
     return reservoir_rfc_param_df
 
@@ -1923,7 +2310,7 @@ def _read_timeseries_files(filepath, timeseries_dates, t0, final_persist_datetim
         sliceStartTime = datetime.strptime(ds.attrs.get('sliceStartTimeUTC'), '%Y-%m-%d_%H:%M:%S')
         sliceTimeResolutionMinutes = ds.attrs.get('sliceTimeResolutionMinutes')
         df = ds.to_dataframe().reset_index().sort_values('forecastInd')[['stationId','discharges','synthetic_values','totalCounts','timeSteps']]
-        df['Datetime'] = pd.date_range(sliceStartTime, periods=df.shape[0], freq=sliceTimeResolutionMinutes+'T')
+        df['Datetime'] = pd.date_range(sliceStartTime, periods=df.shape[0], freq=sliceTimeResolutionMinutes+'min')
         # Filter out forecasts that go beyond the rfc_persist_days parameter. This isn't necessary, but removes
         # excess data, keeping the dataframe of observations as small as possible.
         df = df[df['Datetime']<final_persist_datetime]

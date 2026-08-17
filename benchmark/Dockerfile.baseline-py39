@@ -1,0 +1,66 @@
+# Pristine pre-PR#94 baseline image (Python 3.9) for the benchmark study.
+#
+# Builds the t-route source AS OF the commit PR #94 was opened against
+# (8d17710d) so the benchmark measures the full author contribution
+# (PRs #94 + #95 + the optimization PR) against an unmodified starting point.
+# Build from a worktree of that commit (run from the repo root):
+#
+#   git worktree add --detach /tmp/troute-baseline 8d17710d
+#   docker build --target dev -f benchmark/Dockerfile.baseline-py39 \
+#     --build-arg TROUTE_NATIVE=1 -t troute-dev:baseline /tmp/troute-baseline
+#   git worktree remove --force /tmp/troute-baseline
+#
+# This image is deliberately kept on the ORIGINAL pre-contribution toolchain so
+# the study can measure the Docker contribution too (image size etc.). It does
+# NOT adopt the build improvements that the optimized images use: no slim
+# (fiona + gdal-devel stay), no single-layer/cache-cleaned yum, no ccache, no
+# pip/ccache build mounts, no .o cleanup. It also keeps Python 3.9 and the old
+# kernel makefile (-O2; the -O3/native build flags are part of the measured
+# contribution).
+#
+# The only change vs the 8d17710d source is build-compat, not improvement:
+# NETCDF is passed to compiler.sh so it finds netcdf.mod on arm64 (pre-#94
+# compiler.sh hardcodes the x86_64 openmpi include dir). matplotlib + psutil
+# are added because the benchmark harness needs them.
+
+### BASE IMAGE ###
+FROM rockylinux:9.2 AS rocky-base
+
+WORKDIR "/t-route/"
+
+# Original (uncleaned, multi-layer) system-dependency install, intentionally
+# NOT consolidated/cache-cleaned, to reflect the pre-contribution image.
+RUN yum install -y epel-release dnf-plugins-core \
+    && yum config-manager --set-enabled crb
+RUN yum install -y netcdf netcdf-fortran netcdf-fortran-devel netcdf-openmpi
+RUN yum install -y git cmake python3 python3-devel python3-pip
+# GDAL + gcc-c++: the pre-#94 troute-network requires fiona, which has no
+# aarch64 wheel for py3.9 and builds from source (needs a C++ compiler).
+RUN yum install -y gdal gdal-devel gcc-c++
+
+RUN ln -s /usr/lib64/gfortran/modules/netcdf.mod \
+          "/usr/include/openmpi-$(uname -m)/netcdf.mod"
+
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+COPY requirements.txt .
+RUN python -m pip install -r requirements.txt \
+    && python -m pip install matplotlib psutil
+
+### DEV IMAGE ###
+FROM rocky-base AS dev
+
+# TROUTE_NATIVE is accepted for parity but is a no-op here: the pre-#94 makefile
+# has no native-arch support and always builds -O2.
+ARG TROUTE_NATIVE=0
+ENV TROUTE_NATIVE=${TROUTE_NATIVE}
+COPY pyproject.toml compiler.sh ./
+COPY src /t-route/src
+RUN python -m pip install .[test]
+# Pass NETCDF so the pre-#94 compiler.sh resolves the arm64 openmpi include dir
+# (it otherwise hardcodes x86_64). Build flags stay -O2.
+RUN NETCDF="/usr/include/openmpi-$(uname -m)/" ./compiler.sh
+
+EXPOSE 8000

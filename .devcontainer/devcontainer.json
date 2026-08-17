@@ -1,0 +1,42 @@
+{
+    "name": "troute dev container",
+	"build": {
+		"dockerfile": "../docker/Dockerfile.dev",
+		"context": "..",
+		"target": "dev"
+	},
+	"runArgs": ["--ulimit", "nofile=10000:10000"],
+	"workspaceFolder": "/t-route",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/t-route,type=bind",
+	// Optional /hydrofabric mount. Required for the benchmark workflow,
+	// harmless otherwise. Source defaults to /tmp/troute-no-hydrofabric
+	// (created by initializeCommand) so the container starts without a
+	// hydrofabric dataset on the host. To enable benchmarks in VS Code,
+	// export TROUTE_HYDROFABRIC_DIR=/abs/path/to/hydrofabric in your
+	// shell BEFORE launching VS Code; the var is then visible to the
+	// Dev Containers extension. Nested ${localWorkspaceFolder} expansion
+	// inside an ${localEnv:VAR:DEFAULT} default does NOT work in the
+	// Dev Containers parser, which is why this uses /tmp instead.
+	// If exporting TROUTE_HYDROFABRIC_DIR in a shell is giving you trouble,
+	// run the following two commands instead
+	// echo 'export TROUTE_HYDROFABRIC_DIR=/path/to/nhf_dir' >> ~/.bashrc
+	// echo 'export TROUTE_HYDROFABRIC_DIR=/path/to/nhf_dir' >> ~/.profile
+	"initializeCommand": "mkdir -p /tmp/troute-no-hydrofabric",
+	"mounts": [
+		"source=${localEnv:TROUTE_HYDROFABRIC_DIR:/tmp/troute-no-hydrofabric},target=/hydrofabric,type=bind"
+	],
+	"customizations": {
+	"vscode": {
+		"settings": {
+		"terminal.integrated.defaultProfile.linux": "bash"
+		},
+		"extensions": [
+		"ms-python.python",
+		"charliermarsh.ruff",
+		"yy0931.vscode-sqlite3-editor",
+		"ms-python.debugpy",
+		"ms-toolsai.jupyter"
+		]
+	}
+  }
+}

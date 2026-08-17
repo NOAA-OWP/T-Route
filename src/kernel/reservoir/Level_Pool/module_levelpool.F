@@ -21,6 +21,7 @@ module module_levelpool
     use module_levelpool_state, only: levelpool_state_interface
     use module_reservoir, only: reservoir, reservoir_input, &
                                      reservoir_output
+    use, intrinsic :: iso_c_binding, only: C_INT64_T
     !use module_hydro_stop, only: HYDRO_stop
 
 !#ifdef RESERVOIR_D
@@ -69,7 +70,7 @@ contains
         real, intent(in)    :: orifice_coefficient       ! orifice coefficient
         real, intent(in)    :: orifice_area              ! orifice area (meters^2)
         real, intent(in)    :: max_depth                 ! max depth of reservoir before overtop (meters)
-        integer, intent(in) :: lake_number               ! lake number
+        integer(C_INT64_T), intent(in) :: lake_number               ! lake number
         integer, intent(in) :: wbody_type_code
         character(len=15)   :: lake_number_string
 
@@ -250,7 +251,7 @@ contains
         real, intent(IN)    :: oc      ! orifice coeff.
         real, intent(IN)    :: oa      ! orifice area (m^2)
         real, intent(IN)    :: maxh    ! max depth of reservoir before overtop (m)
-        integer, intent(IN) :: ln      ! lake number
+        integer(C_INT64_T), intent(IN) :: ln      ! lake number
 
         !!DJG Add lake option switch here...move up to namelist in future versions...
         integer :: LAKE_OPT            ! Lake model option (move to namelist later)

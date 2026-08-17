@@ -43,9 +43,9 @@ def create_output_dataframes(results, nts, waterbodies_df):
     ).to_flat_index()
     
     wbdy = pd.concat(
-        [pd.DataFrame(r[6], index=r[0], columns=i_columns) for r in results],
+        [pd.DataFrame(r[7], index=r[0], columns=i_columns) for r in results],
         copy=False,
-    )
+    )  # Corresponds to the ordering of the outflows from line 843 troute/routing/fast_reach/mc_reach.pyx
 
     return flowveldepth, wbdy
 

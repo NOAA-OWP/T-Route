@@ -1,0 +1,55 @@
+# Pinned benchmark configuration for the Muskingum-Cunge kernel performance
+# initiative. NHF (-V5) routing on a representative Ohio subset (~11,327
+# flowpaths carved upstream of fp_id 1725641 in VPU-05).
+#
+# The dataset is NOT in git (see benchmark/.gitignore). Build it once with:
+#     python benchmark/prep_ohio_data.py --src /path/to/nhf_v1.1.4.gpkg
+# which writes data/domain/nhf_subset_ohio.gpkg + data/channel_forcing/ and
+# a MANIFEST.json of sha256 checksums for reproducibility.
+#
+# DO NOT hand-edit paths/nts: bench_e2e.py loads this file, resolves the
+# relative geo_file_path / qlat_input_folder against benchmark/, and
+# overrides stream_output_directory to an isolated temp dir per run.
+#
+# Pinned for reproducible, low-noise, kernel-dominated measurement:
+#   * cpu_pool: 1   -> deterministic, single-threaded (CPU ~= wall)
+#   * nts: 1728     -> fixed workload size (144 forcing hours x 12 subdivisions)
+log_parameters:
+    showtiming: True
+    log_level: INFO
+network_topology_parameters:
+    supernetwork_parameters:
+        geo_file_path: data/domain/nhf_subset_ohio.gpkg
+        network_type: NHF
+    waterbody_parameters:
+        break_network_at_waterbodies: True
+compute_parameters:
+    parallel_compute_method: by-subnetwork-jit-clustered
+    compute_kernel: V02-structured
+    assume_short_ts: True
+    subnetwork_target_size: 10000
+    cpu_pool: 1
+    restart_parameters:
+        start_datetime: "2000-01-01 00:00:00"
+    forcing_parameters:
+        qts_subdivisions: 12
+        dt: 300
+        qlat_input_folder: data/channel_forcing
+        qlat_file_pattern_filter: "*.CHRTOUT_DOMAIN1.csv"
+        nts: 1728
+        max_loop_size: 24
+    data_assimilation_parameters:
+        streamflow_da:
+            streamflow_nudging: False
+            diffusive_streamflow_nudging: False
+        reservoir_da:
+            reservoir_persistence_da:
+                reservoir_persistence_usgs: False
+            reservoir_rfc_da:
+                reservoir_rfc_forecasts: False
+output_parameters:
+    stream_output:
+        stream_output_directory: output/
+        stream_output_time: -1
+        stream_output_type: '.nc'
+        stream_output_internal_frequency: 60

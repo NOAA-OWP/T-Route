@@ -92,7 +92,7 @@ class bmi_troute(Bmi):
                          'lake_water~incoming__volume_flow_rate',
                          'lake_water~outgoing__volume_flow_rate',
                          'lake_surface__elevation',
-                         #TODO: add 'assimilated_value' as an output?
+                         'channel_water__assimilated_volume_flow_rate',
                         ]
 
     #------------------------------------------------------
@@ -106,6 +106,7 @@ class bmi_troute(Bmi):
         'lake_water~incoming__volume_flow_rate':['waterbody_cms','m3 s-1'],
         'lake_water~outgoing__volume_flow_rate':['waterbody_cms','m3 s-1'],
         'lake_surface__elevation':['waterbody_m','m'],
+        'channel_water__assimilated_volume_flow_rate':['assimilated_value','m3 s-1'],
         #--------------   Dynamic inputs --------------------------------
         'land_surface_water_source__volume_flow_rate':['streamflow_cms','m3 s-1'],
         'coastal_boundary_depth':['depth_m', 'm'],
@@ -199,6 +200,7 @@ class bmi_troute(Bmi):
         self._values['lake_water~incoming__volume_flow_rate'] = np.zeros(0)
         self._values['lake_water~outgoing__volume_flow_rate'] = np.zeros(0)
         self._values['lake_surface__elevation'] = np.zeros(0)
+        self._values['channel_water__assimilated_volume_flow_rate'] = np.zeros(0)
 
         # upstream values from other bmi run...
         self._values['upstream_id'] = np.zeros(0, dtype=int)

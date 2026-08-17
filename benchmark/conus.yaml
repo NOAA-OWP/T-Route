@@ -1,0 +1,52 @@
+# Tier C -- parallel CONUS-scale benchmark configuration (single-shot
+# diagnostic). Full NHF hydrofabric (~1.1M flowpaths), NHF (-V5) routing.
+#
+# The dataset is NOT in git (see benchmark/.gitignore). Build it once with:
+#     python benchmark/prep_conus.py
+# which clones + cleans the source geopackage and synthesizes forcing.
+#
+# bench_conus.py loads this file, resolves the relative data paths against
+# benchmark/, and overrides stream_output_directory to a temp dir.
+#
+# Pinned for the parallel-scale diagnostic:
+#   * cpu_pool: 8   -> one worker per M2 Max performance core
+#   * nts: 24       -> 2 simulated hours (single expensive run)
+log_parameters:
+    showtiming: True
+    log_level: INFO
+network_topology_parameters:
+    supernetwork_parameters:
+        geo_file_path: data/conus/nhf_conus.gpkg
+        network_type: NHF
+    waterbody_parameters:
+        break_network_at_waterbodies: True
+compute_parameters:
+    parallel_compute_method: by-subnetwork-jit-clustered
+    compute_kernel: V02-structured
+    assume_short_ts: True
+    subnetwork_target_size: 10000
+    cpu_pool: 8
+    restart_parameters:
+        start_datetime: "2000-01-01 00:00:00"
+    forcing_parameters:
+        qts_subdivisions: 12
+        dt: 300
+        qlat_input_folder: data/conus/channel_forcing
+        qlat_file_pattern_filter: "*.CHRTOUT_DOMAIN1.csv"
+        nts: 24
+        max_loop_size: 2
+    data_assimilation_parameters:
+        streamflow_da:
+            streamflow_nudging: False
+            diffusive_streamflow_nudging: False
+        reservoir_da:
+            reservoir_persistence_da:
+                reservoir_persistence_usgs: False
+            reservoir_rfc_da:
+                reservoir_rfc_forecasts: False
+output_parameters:
+    stream_output:
+        stream_output_directory: output/
+        stream_output_time: -1
+        stream_output_type: '.nc'
+        stream_output_internal_frequency: 60

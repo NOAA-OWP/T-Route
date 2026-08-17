@@ -43,4 +43,3 @@ def log_level_set(input_parameters):
             format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)s - %(funcName)s]: %(message)s',
             stream=sys.stderr,
         )   
-    

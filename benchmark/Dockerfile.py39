@@ -1,0 +1,76 @@
+# syntax=docker/dockerfile:1.4
+#
+# Frozen Python 3.9 devcontainer for benchmark reproducibility.
+#
+# docker/Dockerfile.dev has moved to Python 3.11. This file pins the original
+# Python 3.9 toolchain (with the same fiona-free / slimmed build) so the
+# benchmark numbers measured on 3.9 stay reproducible, and so the benchmark
+# matrix can isolate the Python-version effect:
+#
+#   * baseline    = ngwpc/development code on benchmark/Dockerfile.baseline-py39
+#   * after-py39  = optimized code on this image      (isolates the CODE win)
+#   * after-py311 = optimized code on docker/Dockerfile.dev (isolates PYTHON win)
+#
+# Build from the REPO ROOT:
+#   docker build --target dev -f benchmark/Dockerfile.py39 \
+#     --build-arg TROUTE_NATIVE=1 -t troute-dev:py39 .
+
+### BASE IMAGE ###
+FROM rockylinux:9.2 AS rocky-base
+
+WORKDIR "/t-route/"
+
+ENV LANG="C.UTF-8" \
+    CCACHE_DIR="/root/.cache/ccache" \
+    CCACHE_MAXSIZE="5G"
+
+# System deps in one cache-cleaned layer. python3 on Rocky 9.2 is Python 3.9.
+# No GDAL / gcc-c++: geopandas + pyogrio ship manylinux aarch64 wheels with
+# GDAL bundled; t-route's extensions are Fortran (gfortran) + C (gcc). ccache is
+# wired via PATH symlinks (f2py/distutils treat $F90 as a single binary path,
+# so a "ccache gfortran" wrapper would fail).
+RUN set -eux && \
+    yum install -y epel-release dnf-plugins-core && \
+    yum config-manager --set-enabled crb && \
+    yum install -y \
+        netcdf netcdf-fortran netcdf-fortran-devel netcdf-openmpi \
+        git cmake ccache python3 python3-devel python3-pip && \
+    yum clean all && \
+    rm -rf /var/cache/dnf /var/cache/yum && \
+    mkdir -p /usr/lib64/ccache && \
+    for c in gcc g++ cc gfortran; do ln -sf "$(command -v ccache)" "/usr/lib64/ccache/$c"; done
+
+RUN set -eux && \
+    ln -s /usr/lib64/gfortran/modules/netcdf.mod \
+          "/usr/include/openmpi-$(uname -m)/netcdf.mod"
+
+ENV VIRTUAL_ENV=/opt/venv
+RUN set -eux && python3 -m venv "$VIRTUAL_ENV"
+ENV PATH="$VIRTUAL_ENV/bin:/usr/lib64/ccache:$PATH"
+
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    set -eux && \
+    python -m pip install -r requirements.txt && \
+    python -m pip install matplotlib psutil
+
+### DEV IMAGE ###
+FROM rocky-base AS dev
+
+# TROUTE_NATIVE is accepted for parity with docker/Dockerfile.dev.
+ARG TROUTE_NATIVE=0
+ENV TROUTE_NATIVE=${TROUTE_NATIVE}
+COPY pyproject.toml compiler.sh ./
+COPY src /t-route/src
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    --mount=type=cache,target=/root/.cache/ccache,id=ccache \
+    set -eux && python -m pip install .[test]
+RUN --mount=type=cache,target=/root/.cache/ccache,id=ccache \
+    set -eux && ./compiler.sh && \
+    find /t-route/src -name "*.o" -delete
+
+EXPOSE 8000
+
+LABEL org.opencontainers.image.source="https://github.com/NGWPC/t-route" \
+      org.opencontainers.image.title="t-route (benchmark, py3.9)" \
+      org.opencontainers.image.description="t-route optimized code on the frozen Python 3.9 toolchain"
