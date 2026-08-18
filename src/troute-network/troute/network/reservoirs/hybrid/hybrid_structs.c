@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include "logger.h"
 #include "../../reach_structs.h"
 #include <stdio.h>
 /* Hybrid Reservoir Interface */
@@ -57,8 +58,7 @@ init_hybrid_reach(_Reach* reach, int lake_number,
 
     if(water_elevation < -900000000){
       //Equation below is used in wrf-hydro
-      printf("WARNING: HYBRID PERSISTENCE RESERVOIR USING COLDSTART WATER ELEVATION\n");
-      fflush(stdout);
+      Log(WARNING, "HYBRID PERSISTENCE RESERVOIR USING COLDSTART WATER ELEVATION");
       reach->reach.hybrid.water_elevation = orifice_elevation + ((max_depth - orifice_elevation) * initial_fractional_depth);
     }
     else{

@@ -22,7 +22,6 @@ from .preprocess import (
     unpack_nwm_preprocess_data,
 )
 from .output import nwm_output_generator
-from .log_level_set import log_level_set
 from troute.routing.compute import compute_nhd_routing_v02, compute_diffusive_routing, compute_log_mc, compute_log_diff
 
 import troute.nhd_io as nhd_io
@@ -30,8 +29,8 @@ import troute.nhd_network_utilities_v02 as nnu
 import troute.hyfeature_network_utilities as hnu
 import sys
 
-
-LOG = logging.getLogger('')
+from troute_ewts import MODULE_NAME
+LOG = logging.getLogger(MODULE_NAME)
 
 '''
 High level orchestration of ngen t-route simulations for NWM application

@@ -15,10 +15,9 @@ import troute.hyfeature_network_utilities as hnu
 
 import nwm_routing.__main__ as nwm_routing
 from nwm_routing.output import nwm_output_generator
-from nwm_routing.log_level_set import log_level_set
 
-LOG = logging.getLogger("")
-
+from troute_ewts import configure_logging, MODULE_NAME
+LOG = logging.getLogger(MODULE_NAME)
 
 class Model:
     dt: int
@@ -31,7 +30,7 @@ class Model:
             data = yaml.load(reader, Loader=yaml.SafeLoader)
         self._config: dict = Config.with_strict_mode(**data).dict()
 
-        log_level_set(self.log_parameters)
+        configure_logging()
 
         self.dt = int(self.forcing_parameters["dt"])
 
@@ -66,6 +65,7 @@ class Model:
             )
         else:
             raise Exception("Supernetwork network type must be HYFeaturesNetwork or NHDNetwork")
+        self._network.assemble_coastal_coupling_data()
         network_creation_time = time.time() - network_start_time
 
         # Data data assimilation

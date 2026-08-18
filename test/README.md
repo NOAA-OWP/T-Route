@@ -15,6 +15,7 @@ pytest test/troute-config/
 pytest test/troute-network/
 pytest test/troute-nwm/
 pytest test/troute-bmi/
+pytest test/ewts
 ```
 
 ## Test Categories
@@ -41,6 +42,11 @@ pytest test/troute-bmi/
 
 **Usage:**
 - Integration tests for the BMI NWM implementation of T-Route
+
+### EWTS Tests (`test/ewts/`)
+
+**Usage:**
+- Tests for the Error, Warning and Trapping System implementation.
 
 ### End to End Examples:
 ##### `test/LowerColorado_TX/`

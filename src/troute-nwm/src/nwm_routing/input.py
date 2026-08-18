@@ -6,10 +6,10 @@ import yaml
 
 import troute.nhd_io as nhd_io
 import troute.nhd_network_utilities_v02 as nnu
-from .log_level_set import log_level_set
 from troute.config import Config
 
-LOG = logging.getLogger('')
+from troute_ewts import MODULE_NAME
+LOG = logging.getLogger(MODULE_NAME)
 
 def _input_handler_v04(args):
     '''
@@ -59,9 +59,6 @@ def _input_handler_v04(args):
     parity_parameters = output_parameters.get('wrf_hydro_parity_check')
     data_assimilation_parameters = compute_parameters.get('data_assimilation_parameters')
     
-    # configure python logger
-    log_level_set(log_parameters)
-
     return (
         log_parameters,
         preprocessing_parameters,
@@ -117,10 +114,6 @@ def _input_handler_v03(args):
         parity_parameters,
         data_assimilation_parameters,
     ) = nhd_io.read_config_file(custom_input_file)
-
-    # configure python logger
-    log_level_set(log_parameters)
-    LOG = logging.getLogger('')
 
     # if log level is at or below DEBUG, then check user inputs
     if LOG.isEnabledFor(logging.DEBUG):

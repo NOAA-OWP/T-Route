@@ -12,7 +12,8 @@ import pyarrow.parquet as pq
 from troute.nhd_network import reverse_dict, extract_waterbody_connections, gage_mapping, extract_connections, replace_waterbodies_connections
 
 import logging
-LOG = logging.getLogger('')
+from troute_ewts import MODULE_NAME
+LOG = logging.getLogger(MODULE_NAME)
 
 __showtiming__ = True #FIXME pass flag
 __verbose__ = True #FIXME pass verbosity
