@@ -1,3 +1,22 @@
+This project contains both software components and data components, each under their respective licenses:
+
+SOFTWARE LICENSE
+-----------------
+
+Copyright 2025 Raytheon Company
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation 
+and/or other materials provided with the distribution.
+
+Licensed under: https://opensource.org/license/bsd-2-clause
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+All rights reserved. Based on Government sponsored work under contract GS-35F-204GA.
+
+-----------------
 
                                  Apache License
                            Version 2.0, January 2004
@@ -200,3 +219,29 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+-----------------
+
+"Software code created by U.S. Government employees is not subject to copyright
+in the United States (17 U.S.C. §105). The United States/Department of Commerce
+reserve all rights to seek and obtain copyright protection in countries other
+than the United States for Software authored in its entirety by the Department
+of Commerce. To this end, the Department of Commerce hereby grants to Recipient
+a royalty-free, nonexclusive license to use, copy, and create derivative works
+of the Software outside of the United States."
+
+DATA LICENSE
+-----------------
+
+Geospatial data files contained within this repository were derrived from the Cloud Native Water Resource Modeling Hydrofabric dataset and are made available under the Open Database License (ODbL).
+
+You are free to use, copy, distribute, transmit and adapt our data, as long as you credit Raytheon and its contributors.
+
+Citation:
+Johnson, J. M. (2022). National Hydrologic Geospatial Fabric (hydrofabric) for the Next Generation (NextGen) Hydrologic Modeling Framework,
+HydroShare http://www.hydroshare.org/resource/129787b468aa4d55ace7b124ed27dbde
+
+Any rights in individual contents of the dataset are licensed under the Database Contents License.
+
+For the complete ODbL license text, visit: http://opendatacommons.org/licenses/odbl/1.0/
+For the complete Database Contents License, visit: http://opendatacommons.org/licenses/dbcl/1.0/s

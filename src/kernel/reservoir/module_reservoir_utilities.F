@@ -4,6 +4,7 @@
 module module_reservoir_utilities
     use netcdf
     use module_hydro_stop, only: HYDRO_stop
+    use, intrinsic :: iso_c_binding, only: C_INT64_T
     implicit none
 
 #ifndef NCEP_WCOSS
@@ -17,7 +18,8 @@ contains
     ! Checks and warns for boundary conditions of negative inflow
     subroutine warn_negative_inflow(inflow, lake_number, current_time)
         real, intent(in)    :: inflow
-        integer, intent(in) :: lake_number, current_time
+        integer(C_INT64_T), intent(in) :: lake_number
+        integer, intent(in) :: current_time
 
         if (inflow < 0.0) then
             write(log_warning,*) "WARNING: Current inflow ", inflow, &
@@ -31,7 +33,8 @@ contains
     ! Checks and warns for boundary conditions of exceeding max or min storage
     subroutine warn_storage_boundaries(inflow, end_time_storage, min_storage, max_storage, lake_number, current_time)
         real, intent(in)    :: inflow, end_time_storage, min_storage, max_storage
-        integer, intent(in) :: lake_number, current_time
+        integer(C_INT64_T), intent(in) :: lake_number
+        integer, intent(in) :: current_time
 
         ! Also have option to set the end_time_storage to the max_storage and change the outflow accordingly.
         if (end_time_storage > max_storage) then
@@ -58,7 +61,8 @@ contains
     subroutine modify_negative_storage(inflow, previous_time_storage, routing_period, lake_number, current_time, &
         update_time, end_time_storage, outflow)
         real, intent(in)    :: inflow, previous_time_storage, routing_period
-        integer, intent(in) :: lake_number, current_time, update_time
+        integer(C_INT64_T), intent(in) :: lake_number
+        integer, intent(in) :: current_time, update_time
         real, intent(inout) :: end_time_storage, outflow
 
         ! Note to user:
@@ -117,7 +121,8 @@ contains
     subroutine modify_for_projected_storage(inflow, previous_time_storage, min_storage, max_storage, &
         lake_number, current_time, time_interval, outflow, max_storage_reached)
         real, intent(in)        :: inflow, previous_time_storage, min_storage, max_storage
-        integer, intent(in)     :: lake_number, current_time, time_interval
+        integer(C_INT64_T), intent(in) :: lake_number
+        integer, intent(in)     :: current_time, time_interval
         real, intent(inout)     :: outflow
         logical, intent(inout)  :: max_storage_reached
         real                    :: excess, projected_next_time_interval_storage
@@ -358,7 +363,8 @@ contains
     ! Read lake id from reservoir parameter file and determine the lake_id_index, which
     ! is the index of the particular reservoir's values in all of the parameter arrays.
     subroutine read_netcdf_lake_id(ncid, lake_number, netcdf_array_name, reservoir_parameter_file, lake_id_index)
-        integer, intent(in) :: ncid, lake_number
+        integer, intent(in) :: ncid
+        integer(C_INT64_T), intent(in) :: lake_number
         character(len=*), intent(in) :: netcdf_array_name
         character(len=*), intent(in) :: reservoir_parameter_file
         integer, intent(out) :: lake_id_index
@@ -585,7 +591,7 @@ contains
 
     ! Create Persistence Levelpool Hybrid Reservoir Function Diagnostic Log CSV File
     subroutine create_hybrid_diagnostic_log_file(lake_number)
-        integer, intent(in) :: lake_number
+        integer(C_INT64_T), intent(in) :: lake_number
         character(len=15)   :: lake_number_string, lake_number_string_trimmed
         character(len=50)   :: filename_string
 
@@ -610,7 +616,8 @@ contains
         weight_update_time, gage_lookback_seconds, gage_id, persistence_weight_index, &
         persistence_current_weight, inflow, current_storage, water_elevation, gage_discharge, &
         persisted_outflow, levelpool_outflow, outflow)
-        integer, intent(in) :: lake_number, current_time, timeslice_update_time
+        integer(C_INT64_T), intent(in) :: lake_number
+        integer, intent(in) :: current_time, timeslice_update_time
         integer, intent(in) :: weight_update_time, gage_lookback_seconds
         integer, intent(in) :: persistence_weight_index
         real,    intent(in) :: persistence_current_weight, inflow, current_storage
@@ -641,7 +648,7 @@ contains
 
     ! Create RFC Forecasts Reservoir Function Diagnostic Log CSV File
     subroutine create_rfc_forecasts_diagnostic_log_file(lake_number)
-        integer, intent(in) :: lake_number
+        integer(C_INT64_T), intent(in) :: lake_number
         character(len=15)   :: lake_number_string, lake_number_string_trimmed
         character(len=50)   :: filename_string
 
@@ -664,7 +671,8 @@ contains
     subroutine log_rfc_forecasts_diagnostic_data(lake_number, current_time, time_step, &
         time_series_update_time, lookback_seconds, time_series_index, gage_id,  &
         inflow, water_elevation, levelpool_outflow, outflow)
-        integer, intent(in) :: lake_number, current_time, time_step, time_series_update_time
+        integer(C_INT64_T), intent(in) :: lake_number
+        integer, intent(in) :: current_time, time_step, time_series_update_time
         integer, intent(in) :: lookback_seconds, time_series_index
         character(len=*), intent(in) :: gage_id
         real,    intent(in) :: inflow, water_elevation, levelpool_outflow, outflow
@@ -690,7 +698,7 @@ contains
 
     ! Create Levelpool Reservoir Function Diagnostic Log CSV File
     subroutine create_levelpool_diagnostic_log_file(lake_number)
-        integer, intent(in) :: lake_number
+        integer(C_INT64_T), intent(in) :: lake_number
         character(len=15)   :: lake_number_string, lake_number_string_trimmed
         character(len=50)   :: filename_string
 
@@ -710,7 +718,7 @@ contains
 
     ! Log data to Levelpool Reservoir Function Diagnostic Log CSV File
     subroutine log_levelpool_diagnostic_data(lake_number, inflow, water_elevation, outflow)
-        integer, intent(in) :: lake_number
+        integer(C_INT64_T), intent(in) :: lake_number
         real,    intent(in) :: inflow
         real,    intent(in) :: water_elevation
         real,    intent(in) :: outflow

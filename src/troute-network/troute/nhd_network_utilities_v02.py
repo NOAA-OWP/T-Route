@@ -12,7 +12,7 @@ from joblib import delayed, Parallel
 import troute.nhd_io as nhd_io
 import troute.nhd_network as nhd_network
 
-LOG = logging.getLogger('')
+LOG = logging.getLogger("TROUTE")
 
 def build_connections(supernetwork_parameters):
     '''
@@ -190,9 +190,9 @@ def organize_independent_networks(connections, wbody_break_segments, gage_break_
             
         # break reaches at junctions
         else:
-            
-            # reaches will be broken between junctions
-            path_func = partial(nhd_network.split_at_junction, net)
+            # Fast path: dfs_decomposition's path_func=None inlines the
+            # equivalent of ``partial(nhd_network.split_at_junction, net)``.
+            path_func = None
 
         # construct network reaches with depth-first search alg.
         reaches_bytw[tw] = nhd_network.dfs_decomposition(net, path_func)

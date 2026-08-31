@@ -1,0 +1,94 @@
+# syntax=docker/dockerfile:1.4
+### BASE IMAGE ###
+FROM rockylinux:9.2 AS rocky-base
+
+WORKDIR "/t-route/"
+
+# C.UTF-8 avoids locale-dependent crashes in some Python packages; the ccache
+# settings speed up rebuilds of the Cython/C compiles (ccache has no Fortran
+# front end, so the Fortran kernel is not cached).
+ENV LANG="C.UTF-8" \
+    CCACHE_DIR="/root/.cache/ccache" \
+    CCACHE_MAXSIZE="5G"
+
+# System dependencies in one cache-cleaned layer. netcdf-fortran-devel (needed
+# to link the MC Fortran kernel) lives in the CRB (CodeReady Builder) repo,
+# disabled by default on Rocky 9; EPEL provides the netcdf runtime packages.
+#
+# No GDAL / gcc-c++: the Python geo stack (geopandas + pyogrio) installs
+# manylinux aarch64 wheels with GDAL bundled, and t-route's own extensions are
+# Fortran (gfortran) + C (gcc). Nothing builds C++ or links system GDAL.
+#
+# ccache is wired via PATH symlinks (created below) rather than a
+# CC="ccache gcc" wrapper: f2py/distutils treat $F90 as a single executable
+# path, so the space in "ccache gfortran" makes them fail with "No such file".
+RUN set -eux && \
+    yum install -y epel-release dnf-plugins-core && \
+    yum config-manager --set-enabled crb && \
+    yum install -y \
+        netcdf netcdf-fortran netcdf-fortran-devel netcdf-openmpi \
+        git cmake ccache python3.11 python3.11-devel python3.11-pip && \
+    yum clean all && \
+    rm -rf /var/cache/dnf /var/cache/yum && \
+    mkdir -p /usr/lib64/ccache && \
+    for c in gcc g++ cc gfortran; do ln -sf "$(command -v ccache)" "/usr/lib64/ccache/$c"; done
+
+# Expose the gfortran netcdf module to the openmpi include path compiler.sh
+# looks at (arch-suffixed dir from rocky's netcdf-openmpi package).
+RUN set -eux && \
+    ln -s /usr/lib64/gfortran/modules/netcdf.mod \
+          "/usr/include/openmpi-$(uname -m)/netcdf.mod"
+
+# Virtual environment. /usr/lib64/ccache is ahead of /usr/bin on PATH so the
+# default gcc/gfortran that compiler.sh + f2py invoke resolve to ccache.
+ENV VIRTUAL_ENV=/opt/venv
+RUN set -eux && python3.11 -m venv "$VIRTUAL_ENV"
+ENV PATH="$VIRTUAL_ENV/bin:/usr/lib64/ccache:$PATH"
+
+# Non-t-route dependencies. matplotlib + psutil are the benchmark harness extras
+# (charts + RSS/PSS sampler). The pip cache is a build mount (not an image
+# layer), so the image stays small AND rebuilds skip re-downloading wheels.
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    set -eux && \
+    python -m pip install -r requirements.txt && \
+    python -m pip install matplotlib psutil
+
+### DEV IMAGE ###
+FROM rocky-base AS dev
+
+# TROUTE_NATIVE controls host-specific arch flags (-mcpu=native / -march=native)
+# on the MC Fortran kernel. Default 0 is a portable build; pass
+# --build-arg TROUTE_NATIVE=1 for a host-tuned benchmark image.
+ARG TROUTE_NATIVE=0
+ENV TROUTE_NATIVE=${TROUTE_NATIVE}
+COPY pyproject.toml compiler.sh ./
+COPY src /t-route/src
+RUN --mount=type=cache,target=/root/.cache/pip,id=pip-cache \
+    --mount=type=cache,target=/root/.cache/ccache,id=ccache \
+    set -eux && python -m pip install .[test]
+# ccache (via the PATH symlinks) caches the Cython/C compiles; the Fortran
+# kernel is not cached (ccache has no Fortran front end, so gfortran just falls
+# through). Drop the .o intermediates afterward (the editable install keeps the
+# .so in src/).
+RUN --mount=type=cache,target=/root/.cache/ccache,id=ccache \
+    set -eux && ./compiler.sh && \
+    find /t-route/src -name "*.o" -delete
+
+EXPOSE 8000
+
+LABEL org.opencontainers.image.source="https://github.com/NGWPC/t-route" \
+      org.opencontainers.image.title="t-route" \
+      org.opencontainers.image.description="t-route NWM channel routing (dev/benchmark image)"
+
+### PROD IMAGE ###
+FROM rocky-base AS troute
+
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/ccache,id=ccache \
+    set -eux && ./compiler.sh no-e && \
+    find /t-route/src -name "*.o" -delete
+
+RUN set -eux && mkdir -p /hydrofabric
+
+ENTRYPOINT ["/opt/venv/bin/python", "-m", "nwm_routing"]

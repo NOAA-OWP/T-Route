@@ -1,9 +1,8 @@
 from pathlib import Path
-from pydantic import BaseModel, Field, validator
+from pydantic import field_validator, BaseModel, DirectoryPath, FilePath, Field, ValidationInfo
 
 from typing import Optional, List
 from typing_extensions import Annotated, Literal
-from .types import FilePath, DirectoryPath
 
 streamOutput_allowedTypes = Literal['.csv', '.nc', '.pkl']
 
@@ -166,7 +165,8 @@ class StreamOutput(BaseModel):
     is in minutes). So if dt=300(sec), this value cannot be smaller than 5(min) and should be a multiple of 5. 
     """
     
-    @validator('stream_output_directory')
+    @field_validator('stream_output_directory')
+    @classmethod
     def validate_stream_output_directory(cls, value):
         if value is None:
             return None
@@ -181,15 +181,16 @@ class StreamOutput(BaseModel):
         value.mkdir(parents=True, exist_ok=True)
         return value
     
-    @validator('stream_output_internal_frequency')
-    def validate_stream_output_internal_frequency(cls, value, values):
+    @field_validator('stream_output_internal_frequency')
+    def validate_stream_output_internal_frequency(cls, value, info: ValidationInfo):
         if value is not None:
             if value % 5 != 0:
                 raise ValueError("stream_output_internal_frequency must be a multiple of 5.")
-            if values.get('stream_output_time') != -1 and value / 60 > values['stream_output_time']:
+            if info.data.get('stream_output_time') != -1 and value / 60 > info.data['stream_output_time']:
                 raise ValueError("stream_output_internal_frequency should be less than or equal to stream_output_time in minutes.")
         return value
  
 
-OutputParameters.update_forward_refs()
-WrfHydroParityCheck.update_forward_refs()
+# Update model references for Pydantic v2
+OutputParameters.model_rebuild()
+WrfHydroParityCheck.model_rebuild()

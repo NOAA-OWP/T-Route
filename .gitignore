@@ -79,3 +79,31 @@ bower_components/
 .grunt/
 src/vendor/
 dist/
+
+# Build dirs #
+##############
+build/
+uv.lock
+output/
+
+# .vscode files #
+#################
+.vscode/
+
+# UV lock #
+###########
+uv.lock
+
+# data #
+########
+data/
+output/
+*.gif
+test/nhf/*/*/*.csv
+test/nhf/*/*/*.nc
+test/nhf/four_lakes/reservoir_da/*/*.ncdf
+benchmark/conus_lakes/channel_forcing/*.nc
+
+# development #
+###############
+dev/

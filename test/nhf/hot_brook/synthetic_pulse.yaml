@@ -1,0 +1,37 @@
+compute_parameters:
+  assume_short_ts: true
+  compute_kernel: V02-structured
+  cpu_pool: 1
+  data_assimilation_parameters:
+    reservoir_da:
+      reservoir_persistence_da:
+        reservoir_persistence_usgs: false
+      reservoir_rfc_da:
+        reservoir_rfc_forecasts: false
+    streamflow_da:
+      diffusive_streamflow_nudging: false
+      streamflow_nudging: false
+  forcing_parameters:
+    dt: 300
+    max_loop_size: 288
+    nts: 600
+    qlat_file_pattern_filter: '*.CHRTOUT_DOMAIN1.csv'
+    qlat_input_folder: channel_forcing/
+  parallel_compute_method: by-subnetwork-jit-clustered
+  restart_parameters:
+    start_datetime: '2000-01-01 00:00:00'
+  subnetwork_target_size: 10000
+log_parameters:
+  log_level: DEBUG
+  showtiming: true
+network_topology_parameters:
+  supernetwork_parameters:
+    geo_file_path: domain/nhf.gpkg
+  waterbody_parameters:
+    break_network_at_waterbodies: true
+output_parameters:
+  stream_output:
+    stream_output_directory: output/
+    stream_output_internal_frequency: 60
+    stream_output_time: -1
+    stream_output_type: .nc

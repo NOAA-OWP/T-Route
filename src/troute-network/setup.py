@@ -15,6 +15,10 @@ and builds using distutils.
 if "--use-cython" in sys.argv:
     USE_CYTHON = True
     sys.argv.remove("--use-cython")
+elif os.environ.get("USE_CYTHON"):
+    # pip's --config-setting=--build-option no longer reaches sys.argv under
+    # setuptools >= 70; an env var is the portable way to request Cython.
+    USE_CYTHON = True
 else:
     USE_CYTHON = False
 
@@ -51,6 +55,33 @@ elif "Intel" in result:
 else:
     raise Exception("Could not identify fortran compiler!")
 print("Fortran compiler type is: {0}".format(fcompiler_type))
+
+# ------------------------------------------------------------
+# EWTS configuration
+# ------------------------------------------------------------
+EWTS_PREFIX = os.environ.get("EWTS_PREFIX", "/opt/ewts")
+USE_EWTS = os.environ.get("TROUTE_USE_EWTS", "OFF").upper() in ("1", "ON", "TRUE", "YES")
+
+ewts_include_dirs = []
+ewts_library_dirs = []
+ewts_libraries = []
+ewts_compile_args = []
+
+if USE_EWTS:
+    ewts_include_dirs = [
+        os.path.join(EWTS_PREFIX, "include"),
+    ]
+    ewts_library_dirs = [
+        os.path.join(EWTS_PREFIX, "lib"),
+        os.path.join(EWTS_PREFIX, "lib64"),
+    ]
+    ewts_libraries = [
+        "ewts_c",
+        "ewts_ngen_bridge",
+    ]
+    ewts_compile_args = [
+        "-DTROUTE_USE_EWTS",
+    ]
 
 class build_ext_subclass( build_ext ):
     def build_extensions(self):
@@ -90,10 +121,11 @@ levelpool_reservoirs = Extension(
     sources=[
              "troute/network/reservoirs/levelpool/levelpool.{}".format(ext),
              ],
-    include_dirs=[np.get_include(),  "troute/network/"],
+    include_dirs=[np.get_include(), "troute/network/"]  + ewts_include_dirs,
+    library_dirs=ewts_library_dirs,
     extra_objects=["./libs/binding_lp.a"],
-    libraries=["netcdff", "netcdf"],
-    extra_compile_args=["-g"],
+    libraries=["netcdff", "netcdf"] + ewts_libraries,
+    extra_compile_args=["-g"] + ewts_compile_args,
 )
 
 #hybrid_reservoirs = Extension(
@@ -101,7 +133,7 @@ levelpool_reservoirs = Extension(
 #    sources=[
 #             "troute/network/reservoirs/hybrid/hybrid.{}".format(ext),
 #             ],
-#    include_dirs=[np.get_include()],
+#    include_dirs=[np.get_include(), "troute/network/"],
 #    extra_objects=["./libs/bind_hybrid.a"],
 #    libraries=["netcdff", "netcdf"],
 #    extra_compile_args=["-g"],
@@ -112,14 +144,15 @@ rfc_reservoirs = Extension(
     sources=[
              "troute/network/reservoirs/rfc/rfc.{}".format(ext),
              ],
-    include_dirs=[np.get_include(),  "troute/network/"],
+    include_dirs=[np.get_include(),  "troute/network/"] + ewts_include_dirs,
+    library_dirs=ewts_library_dirs,
     extra_objects=["./libs/bind_rfc.a"],
-    libraries=["netcdff", "netcdf"],
-    extra_compile_args=["-g"],
+    libraries=["netcdff", "netcdf"] + ewts_libraries,
+    extra_compile_args=["-g"] + ewts_compile_args,
 )
 
 package_data = {"troute": ["__init__.pxd"],
-                "troute.network": ["reach.pxd", "__init__.pxd", "reach_structs.h", "reach_structs.c"],
+                "troute.network": ["reach.pxd", "__init__.pxd", "reach_structs.h", "reach_structs.c", "logger.h"],
                 "troute.network.musking": ["mc_reach.pxd", "__init__.pxd", "mc_reach_structs.h", "mc_reach_structs.c"],
                 "troute.network.reservoirs":["__init__.pxd"],
                 "troute.network.reservoirs.levelpool":["__init__.pxd", "levelpool.pxd", "levelpool_structs.h", "levelpool_structs.c"],

@@ -1,0 +1,20 @@
+# Keep the Docker build context small. The dev target only COPYs
+# src/ + requirements.txt + pyproject.toml + compiler.sh, and the prod
+# target's COPY . . does not need benchmark data, git history, test
+# fixtures, or build artifacts. Excluding them speeds the build and
+# keeps the image lean.
+.git
+.pixi
+benchmark
+test
+docs
+docker
+.devcontainer
+*.gpkg
+*.nc
+*.pkl
+*.pstats
+**/__pycache__
+**/*.pyc
+**/*.so
+**/build

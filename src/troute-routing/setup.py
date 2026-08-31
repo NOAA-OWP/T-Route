@@ -16,6 +16,10 @@ and builds using distutils.
 if "--use-cython" in sys.argv:
     USE_CYTHON = True
     sys.argv.remove("--use-cython")
+elif os.environ.get("USE_CYTHON"):
+    # pip's --config-setting=--build-option no longer reaches sys.argv under
+    # setuptools >= 70; an env var is the portable way to request Cython.
+    USE_CYTHON = True
 else:
     USE_CYTHON = False
 

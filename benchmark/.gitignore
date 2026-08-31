@@ -1,0 +1,8 @@
+# The benchmark dataset and outputs are large and machine-local.
+# Regenerate the dataset with `python benchmark/prep_ohio_data.py`.
+data/
+golden/
+results/
+.regress_golden/
+__pycache__/
+*.pyc

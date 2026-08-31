@@ -29,7 +29,7 @@ contains
         lake_number, reservoir_type, reservoir_parameter_file, start_date, &
         usgs_timeslice_path, usace_timeslice_path, observation_lookback_hours, &
         observation_update_time_interval_seconds) BIND(C, NAME='init_hybrid')
-            USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_F_POINTER, C_CHAR, c_null_char
+            USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_F_POINTER, C_CHAR, c_null_char, C_INT64_T
             TYPE(C_PTR), INTENT(IN), VALUE :: handle
             real,    intent(inout) :: water_elevation           ! meters AMSL
             real,    intent(in)    :: lake_area                 ! area of lake (km^2)
@@ -42,7 +42,7 @@ contains
             real,    intent(in)    :: orifice_area              ! orifice area (meters^2)
             real,    intent(in)    :: lake_max_water_elevation  ! max water elevation (meters)
             real,    intent(in)    :: initial_fractional_depth  ! initial fraction water depth
-            integer, intent(in)    :: lake_number               ! lake number
+            integer(C_INT64_T), intent(in) :: lake_number               ! lake number
             integer, intent(in)    :: reservoir_type            ! reservoir type
             character(kind=c_char), dimension(*), intent(IN) :: reservoir_parameter_file
             character(kind=c_char), dimension(*), intent(IN) :: start_date

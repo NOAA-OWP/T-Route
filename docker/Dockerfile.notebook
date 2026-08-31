@@ -1,0 +1,29 @@
+FROM rockylinux:9.2 as rocky-base
+RUN yum install -y epel-release 
+RUN yum install -y netcdf netcdf-fortran netcdf-fortran-devel netcdf-openmpi
+
+RUN yum install -y git cmake python python-devel pip 
+
+WORKDIR "/t-route/"
+
+COPY . /t-route/
+
+RUN ln -s /usr/lib64/gfortran/modules/netcdf.mod /usr/include/openmpi-x86_64/netcdf.mod
+
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+
+# Equivalent to source /opt/venv/bin/activate
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+RUN python -m pip install .
+RUN python -m pip install .[jupyter]
+RUN python -m pip install .[test]
+
+RUN ./compiler.sh no-e
+
+EXPOSE 8000
+
+# increase max open files soft limit
+RUN ulimit -n 10000
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8000", "--no-browser", "--allow-root"]

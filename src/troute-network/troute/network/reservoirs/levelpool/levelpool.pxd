@@ -11,7 +11,7 @@ cdef void update_lp_c(_Reach* reach, float updated_elevation, float* water_eleva
 
 cdef extern from "levelpool_structs.h":
   ctypedef struct _MC_Levelpool:
-    int lake_number
+    long lake_number
     float dam_length, area, max_depth
     float orifice_area, orifice_coefficient, orifice_elevation
     float weir_coefficient, weir_elevation, weir_length

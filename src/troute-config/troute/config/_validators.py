@@ -1,4 +1,3 @@
-from pydantic.fields import ModelField
 from datetime import datetime
 from typing import Tuple, TypeVar, Union
 
@@ -15,13 +14,6 @@ DATETIME_FORMATS: Tuple[str, ...] = (
     "%Y/%m/%d %H:%M:%S",
 )
 """Accepted string datetime formats"""
-
-
-def coerce_none_to_default(value: Union[T, None], field: ModelField) -> T:
-    """Return a ModelField's default if None is provided."""
-    if value is None:
-        return field.default
-    return value
 
 
 def coerce_datetime(value: Union[str, datetime]) -> datetime:

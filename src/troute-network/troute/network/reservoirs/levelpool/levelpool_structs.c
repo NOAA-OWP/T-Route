@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdint.h>
+#include "logger.h"
 #include "../../reach_structs.h"
 #include <stdio.h>
 /* Level Pool Reservoir Interface */
@@ -10,7 +12,7 @@ extern void init_lp(void* handle, float *water_elevation, float *lake_area,
                     float *weir_elevation, float *weir_coefficient, 
                     float *weir_length, float *dam_length, 
                     float *orifice_elevation, float *orifice_coefficient, 
-                    float *orifice_area, float *max_depth, int *lake_number, 
+                    float *orifice_area, float *max_depth, int64_t *lake_number, 
                     int *wbody_type_code);
 
 extern void run_lp(void* handle, float *inflow, float *lateral_inflow,
@@ -69,7 +71,7 @@ extern void assim(void* handle, float *updated_elevation,
  * Notes
  *
  */
-void init_levelpool_reach(_Reach* reach, int lake_number,
+void init_levelpool_reach(_Reach* reach, long lake_number,
                      float dam_length, float area, float max_depth, 
                      float orifice_area, float orifice_coefficient, 
                      float orifice_elevation, float weir_coefficient, 
@@ -96,8 +98,7 @@ void init_levelpool_reach(_Reach* reach, int lake_number,
 
     if(water_elevation < -900000000){
       //Equation below is used in wrf-hydro
-      printf("WARNING: LEVELPOOL USING COLDSTART WATER ELEVATION\n");
-      fflush(stdout);
+      Log(WARNING, "LEVELPOOL USING COLDSTART WATER ELEVATION");
       reach->reach.lp.water_elevation = orifice_elevation 
           + ((max_depth - orifice_elevation) * initial_fractional_depth);
     }

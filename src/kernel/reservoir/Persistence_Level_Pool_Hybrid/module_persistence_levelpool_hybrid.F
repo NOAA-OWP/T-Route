@@ -20,6 +20,7 @@ module module_persistence_levelpool_hybrid
     use module_persistence_levelpool_hybrid_state, only: hybrid_state_interface
     use module_levelpool, only: levelpool
     use module_reservoir_utilities, only: modify_for_projected_storage, warn_negative_inflow, &
+    use, intrinsic :: iso_c_binding, only: C_INT64_T
                                           create_hybrid_diagnostic_log_file, &
                                           log_hybrid_diagnostic_data
     use module_reservoir, only: reservoir, reservoir_input, reservoir_output
@@ -76,7 +77,7 @@ contains
         real,    intent(in)    :: orifice_area              ! orifice area (meters^2)
         real,    intent(in)    :: lake_max_water_elevation  ! max water elevation (meters)
         real,    intent(in)    :: initial_fractional_depth  ! initial fraction water depth
-        integer, intent(in)    :: lake_number               ! lake number
+        integer(C_INT64_T), intent(in)    :: lake_number               ! lake number
         integer, intent(in)    :: reservoir_type            ! reservoir type
         character(len=*),   intent(in) :: reservoir_parameter_file
         character(len=19),  intent(in) :: start_date

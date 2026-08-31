@@ -18,6 +18,7 @@ module module_rfc_forecasts
     use module_levelpool, only: levelpool
     use module_reservoir_utilities, only: create_rfc_forecasts_diagnostic_log_file, &
                                           log_rfc_forecasts_diagnostic_data
+    use, intrinsic :: iso_c_binding, only: C_INT64_T
     use module_reservoir, only: reservoir, reservoir_input, reservoir_output
     use module_reservoir_read_rfc_time_series_data, only: time_series_data
     use module_hydro_stop, only: HYDRO_stop
@@ -71,7 +72,7 @@ contains
         real,    intent(in)    :: orifice_area              ! orifice area (meters^2)
         real,    intent(in)    :: lake_max_water_elevation  ! max water elevation (meters)
         real,    intent(in)    :: initial_fractional_depth  ! initial fraction water depth
-        integer, intent(in)    :: lake_number               ! lake number
+        integer(C_INT64_T), intent(in)    :: lake_number               ! lake number
         integer, intent(in)    :: reservoir_type            ! reservoir type
         character(len=*),   intent(in) :: reservoir_parameter_file
         character(len=19),  intent(in) :: start_date
