@@ -25,6 +25,7 @@ class OutputParameters(BaseModel):
     test_output: Optional[Path] = None
     stream_output: Optional["StreamOutput"] = None
     lastobs_output: Optional[DirectoryPath] = None
+    netcdf_output: Optional["NetcdfOutput"] = None
 
 
 class ChanobsOutput(BaseModel):
@@ -189,7 +190,85 @@ class StreamOutput(BaseModel):
             if values.get('stream_output_time') != -1 and value / 60 > values['stream_output_time']:
                 raise ValueError("stream_output_internal_frequency should be less than or equal to stream_output_time in minutes.")
         return value
- 
 
+class NetcdfOutputVariables(BaseModel):
+    """
+    Controls which variables are written for each feature type.
+    
+    Omitting either sub-key falls back to its full default list.  Reservoir
+    output is skipped entirely if the simulation has no waterbodies, regardless
+    of what is listed under 'reservoir'.
+    """
+    stream: List[str] = ['streamflow', 'velocity', 'depth', 'nudge']
+    """
+    Variables to write for flowpath and nexus rows.
+    Valid options: streamflow, velocity, depth, nudge
+    NOTE: Only streamflow will be written for nexus rows.
+    """
+    reservoir: Optional[List[str]] = ['inflow', 'outflow', 'water_sfc_elev']
+    """
+    Variables to write for reservoir rows.
+    Valid options: inflow, outflow, water_sfc_elev
+    #TODO: add 'reservoir_assimilated_value' as an output variable?
+    """
+ 
+    @validator('stream')
+    def valid_stream_variables(cls, v):
+        valid = {'streamflow', 'velocity', 'depth', 'nudge'}
+        bad = set(v) - valid
+        if bad:
+            raise ValueError(
+                f"Invalid stream variable(s) {bad}. Must be a subset of {valid}.")
+        return v
+ 
+    @validator('reservoir')
+    def valid_reservoir_variables(cls, v):
+        if v is None:
+            return v
+        valid = {'inflow', 'outflow', 'water_sfc_elev'}
+        bad = set(v) - valid
+        if bad:
+            raise ValueError(...)
+        return v
+ 
+ 
+class NetcdfOutput(BaseModel):
+    """
+    Produces a single NetCDF file containing all requested locations and timesteps for
+    the full simulation.
+    
+    Stream and reservoir outputs are co-located in the same file under
+    separate dimensions (flowpath_id / lake_id). Reservoir variables are
+    only written when the simulation contains waterbodies.
+    """
+    output_path: str
+    """Filepath to save output."""
+ 
+    output_interval: int = 3600
+    """Frequency of output in seconds."""
+ 
+    subset_file: Optional[str] = None
+    """
+    Path to a YAML file specifying which IDs to include in the output.
+    Accepted keys: 'feature_ids' (wb flowpath integers or 'wb-NNNN' strings) 
+    and/or 'nexuses' (nexus IDs as integers or 'nex-NNNN' strings).
+    Both may be present in the same file to mix flowpath and nexus rows in the output.
+    """
+ 
+    variables: NetcdfOutputVariables = NetcdfOutputVariables()
+    """
+    Variables to write, split by feature type.  Defaults to all available
+    variables for both streams and reservoirs.
+    """
+ 
+    @validator('variables', pre=True, always=True)
+    def coerce_variables(cls, v):
+        if v is None:
+            return NetcdfOutputVariables()
+        if isinstance(v, dict):
+            return NetcdfOutputVariables(**v)
+        return v
+
+    
 OutputParameters.update_forward_refs()
 WrfHydroParityCheck.update_forward_refs()

@@ -12,6 +12,7 @@ import logging
 import pyarrow as pa
 import pyarrow.parquet as pq
 import xarray as xr
+from itertools import chain
 
 from troute.nhd_network import extract_connections, replace_waterbodies_connections, reverse_network, reachable_network, split_at_waterbodies_and_junctions, split_at_junction, dfs_decomposition
 from troute.nhd_network_utilities_v02 import organize_independent_networks
@@ -102,6 +103,7 @@ class AbstractNetwork(ABC):
         dt                           = self.forcing_parameters.get("dt", None)
         qts_subdivisions             = self.forcing_parameters.get("qts_subdivisions", None)
         qlat_input_folder            = self.forcing_parameters.get("qlat_input_folder", None)
+        qlat_input_file              = self.forcing_parameters.get("qlat_input_file", None)
         qlat_file_index_col          = self.forcing_parameters.get("qlat_file_index_col", "feature_id")
         qlat_file_value_col          = self.forcing_parameters.get("qlat_file_value_col", "q_lateral")
         qlat_file_gw_bucket_flux_col = self.forcing_parameters.get("qlat_file_gw_bucket_flux_col", "qBucket")
@@ -113,6 +115,7 @@ class AbstractNetwork(ABC):
         run["dt"]                           = run.get("dt", dt)
         run["qts_subdivisions"]             = run.get("qts_subdivisions", qts_subdivisions)
         run["qlat_input_folder"]            = run.get("qlat_input_folder", qlat_input_folder)
+        run["qlat_input_file"]              = run.get("qlat_input_file", qlat_input_file)
         run["qlat_file_index_col"]          = run.get("qlat_file_index_col", qlat_file_index_col)
         run["qlat_file_value_col"]          = run.get("qlat_file_value_col", qlat_file_value_col)
         run["qlat_file_gw_bucket_flux_col"] = run.get("qlat_file_gw_bucket_flux_col", qlat_file_gw_bucket_flux_col)
@@ -684,9 +687,16 @@ class AbstractNetwork(ABC):
         # if lite restart file is provided, the read channel initial states from it
         if from_files:
             if restart_parameters.get("lite_channel_restart_file", None):
-                self._q0, self._t0 = nhd_io.read_lite_restart(
-                    restart_parameters['lite_channel_restart_file']
-                )
+                restart_file_type = restart_parameters['lite_channel_restart_file'].suffix
+                if restart_file_type==".parquet":
+                    restart_df = pd.read_parquet(pathlib.Path(restart_parameters['lite_channel_restart_file']))
+                    # extract restart time as datetime object
+                    self._t0 = restart_parameters.get("start_datetime")
+                    self._q0 = restart_df.drop(columns = 'time')
+                else:
+                    self._q0, self._t0 = nhd_io.read_lite_restart(
+                        restart_parameters['lite_channel_restart_file']
+                    )
             
             elif restart_parameters.get("wrf_hydro_channel_restart_file", None):
                 self._q0 = nhd_io.get_channel_restart_from_wrf_hydro(
@@ -749,6 +759,7 @@ class AbstractNetwork(ABC):
         nts                = forcing_parameters.get("nts", None)
         max_loop_size      = forcing_parameters.get("max_loop_size", 12)
         dt                 = forcing_parameters.get("dt", None)
+        qlat_input_file    = forcing_parameters.get("qlat_input_file", None)
 
         try:
             qlat_input_folder = pathlib.Path(qlat_input_folder)
@@ -760,38 +771,66 @@ class AbstractNetwork(ABC):
 
         forcing_glob_filter = forcing_parameters["qlat_file_pattern_filter"]
         binary_folder = forcing_parameters.get('binary_nexus_file_folder', None)
-
-        if forcing_glob_filter=="nex-*" and binary_folder:
-            print("Reformating qlat nexus files as hourly binary files...")
-            qlat_files = qlat_input_folder.glob(forcing_glob_filter)
-
-            #Check that directory/files specified will work
-            if not binary_folder:
-                raise(RuntimeError("No output binary qlat folder supplied in config"))
-            elif not os.path.exists(binary_folder):
-                raise(RuntimeError("Output binary qlat folder supplied in config does not exist"))
-            
-            #Add tnx for backwards compatability
-            qlat_files_list = list(qlat_files) + list(qlat_input_folder.glob('tnx*.csv'))
-            #Convert files to binary hourly files, reset nexus input information
-            qlat_input_folder, forcing_glob_filter = nex_files_to_binary(qlat_files_list, binary_folder)
-            forcing_parameters["qlat_input_folder"] = qlat_input_folder
-            forcing_parameters["qlat_file_pattern_filter"] = forcing_glob_filter
         
-        if forcing_glob_filter=="nex-*":
-            all_files = sorted(qlat_input_folder.glob(forcing_glob_filter))
-            final_timestamp = pd.read_csv(all_files[0], header=None, index_col=[0]).tail(1).iloc[0,0]
-            final_timestamp = datetime.strptime(final_timestamp.strip(), "%Y-%m-%d %H:%M:%S")
-            
-            all_files = [os.path.basename(f) for f in all_files]
-            
-            run_sets = [
-                {
-                    'qlat_files': all_files,
-                    'nts': nts,
-                    'final_timestamp': final_timestamp
-                }
-            ]
+        if qlat_input_file:
+            filename, extension = os.path.splitext(qlat_input_file)
+            if extension=='.nc':
+                # Derive total duration strictly from steps
+                total_duration = pd.Timedelta(seconds=dt * nts)
+                end_time = self.t0 + total_duration
+
+                # Define the "Master Clock" broken into chunks
+                # freq=f"{max_loop_size_hours}h" creates strict hourly breaking points
+                # inclusive="left" ensures we don't create an empty zero-length chunk at the very end
+                chunk_starts = pd.date_range(start=self.t0, end=end_time, freq=f"{max_loop_size}h", inclusive="left")
+
+                run_sets = []
+
+                for i, start in enumerate(chunk_starts):
+                    run_sets.append({})
+                    
+                    # Calculate the theoretical end of this chunk (e.g., +1 hour)
+                    theoretical_end = start + pd.Timedelta(hours=max_loop_size)
+                    
+                    # Cap the end at the simulation's actual end time (handles partial last hours)
+                    actual_end = min(theoretical_end, end_time)
+
+                    run_sets[i]['timestamps'] = [start, actual_end]
+                    run_sets[i]['nts'] = int(round((actual_end - start).total_seconds() / dt))
+                
+        elif forcing_glob_filter=="nex-*":
+            if binary_folder:
+                print("Reformating qlat nexus files as hourly binary files...")
+                qlat_files = qlat_input_folder.glob(forcing_glob_filter)
+
+                #Check that directory/files specified will work
+                if not binary_folder:
+                    raise(RuntimeError("No output binary qlat folder supplied in config"))
+                elif not os.path.exists(binary_folder):
+                    raise(RuntimeError("Output binary qlat folder supplied in config does not exist"))
+                
+                #Add tnx for backwards compatability
+                qlat_files_list = list(qlat_files) + list(qlat_input_folder.glob('tnx*.csv'))
+                #Convert files to binary hourly files, reset nexus input information
+                qlat_input_folder, forcing_glob_filter = nex_files_to_binary(qlat_files_list, binary_folder)
+                forcing_parameters["qlat_input_folder"] = qlat_input_folder
+                forcing_parameters["qlat_file_pattern_filter"] = forcing_glob_filter
+
+            else:
+                patterns = ("nex-*", "tnx-*")
+                all_files = sorted(chain.from_iterable(qlat_input_folder.glob(p) for p in patterns))
+                final_timestamp = pd.read_csv(all_files[0], header=None, index_col=[0]).tail(1).iloc[0,0]
+                final_timestamp = datetime.strptime(final_timestamp.strip(), "%Y-%m-%d %H:%M:%S")
+                
+                all_files = [os.path.basename(f) for f in all_files]
+                
+                run_sets = [
+                    {
+                        'qlat_files': all_files,
+                        'nts': nts,
+                        'final_timestamp': final_timestamp
+                    }
+                ]
             
         # TODO: Throw errors if insufficient input data are available
         elif run_sets:        

@@ -74,6 +74,7 @@ def _input_handler_v04(args):
         output_parameters,
         parity_parameters,
         data_assimilation_parameters,
+        config_dict,
     )
 
 def _input_handler_v03(args):

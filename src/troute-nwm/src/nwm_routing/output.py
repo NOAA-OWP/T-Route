@@ -174,10 +174,6 @@ def nwm_output_generator(
         )
 
     ################### Output Handling
-    
-    start_time = time.time()
-
-    LOG.info(f"Handling output ...")
 
     csv_output = output_parameters.get("csv_output", None)
     csv_output_folder = None
@@ -590,8 +586,6 @@ def nwm_output_generator(
 
     # if 'flowveldepth' in locals():
     #    LOG.debug(flowveldepth)
-
-    LOG.debug("output complete in %s seconds." % (time.time() - start_time))
 
     ################### Parity Check
 

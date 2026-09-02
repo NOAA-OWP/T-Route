@@ -113,7 +113,7 @@ def build_da_sets(da_params, run_sets, t0):
             # timestamps of TimeSlice files desired for run set i
             timestamps = pd.date_range(
                 t0 - dt_timeslice * timeslice_pad,
-                run_sets[i]['final_timestamp'] + dt_timeslice * 4,
+                run_sets[i].get('timestamps')[1] + dt_timeslice * 4,
                 freq=dt_timeslice
             )
 
@@ -160,7 +160,7 @@ def build_da_sets(da_params, run_sets, t0):
             if LakeOntario_outflow:
                 da_sets[i]['LakeOntario_outflow'] = LakeOntario_outflow                
             # reset initialization time for loop set i+1
-            t0 = run_sets[i]['final_timestamp']
+            t0 = run_sets[i].get('timestamps')[1]
             
     return da_sets
 

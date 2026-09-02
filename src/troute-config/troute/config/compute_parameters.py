@@ -63,6 +63,14 @@ class ComputeParameters(BaseModel):
     """
     If True, Courant metrics are returnd with simulations. This only works for MC simulations
     """
+    compute_nodes: bool = False
+    """
+    Should individual river segments be broken up into small "compute" nodes.
+    """
+    compute_node_target_length: Optional[float] = 270.0
+    """
+    Target length for "compute" nodes.
+    """
 
     restart_parameters: "RestartParameters" = Field(default_factory=dict)
     hybrid_parameters: "HybridParameters" = Field(default_factory=dict)
@@ -429,6 +437,10 @@ class ForcingParameters(BaseModel):
     """
     Value is in hours. To handle memory issues, t-route can divvy it's simulation time into chunks, reducing the amount 
     of forcing and data assimilation files it reads into memory at once. This is the size of those time loops.
+    """
+    qlat_input_file: Optional[str] = None
+    """
+    Single q_lateral forcing file. If this parameter is provided, 'qlat_file_pattern_filter' is ignored.
     """
     qlat_file_index_col: str = "feature_id"
     """

@@ -1,18 +1,20 @@
 # compiler
-FC := $(F90)
+FC := $(FC)
 
 # compile flags
 #FCFLAGS = -c -fdefault-real-8 -fno-align-commons -fbounds-check --free-form
 F90FLAGSGFORTRAN = -g -c -O2 -fPIC -lgfortran -lgcc -static-libgfortran -static-libgcc -nodefaultlibs
 F90FLAGSINTEL = -free -w -c -O2 -fPIC -fconvert=big-endian -frecord-marker=4
-ifeq ($(notdir ${FC}), ifort)
-F90FLAGS = $(F90FLAGSINTEL)
-else ifeq ($(notdir ${FC}), mpiifort)
-F90FLAGS = $(F90FLAGSINTEL)
-else
-F90FLAGS = $(F90FLAGSGFORTRAN)
-endif
 
+FC_VERSION := $(shell $(FC) --version 2>&1 || true)
+
+IS_INTEL := $(findstring Intel,$(FC_VERSION))$(findstring ifx,$(FC_VERSION))$(findstring ifort,$(FC_VERSION))
+
+ifneq ($(strip $(IS_INTEL)),)
+    F90FLAGS = $(F90FLAGSINTEL)
+else
+    F90FLAGS = $(F90FLAGSGFORTRAN)
+endif
 
 .PHONY: reach all install
 all: reach 

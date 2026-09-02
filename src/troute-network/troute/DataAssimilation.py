@@ -1353,6 +1353,8 @@ def _set_persistence_reservoir_da_params(run_results):
                                            ]
                                           )
     
+    usgs_frames = []
+    usace_frames = []
     for r in run_results:
         
         if len(r[4][0]) > 0:
@@ -1360,14 +1362,28 @@ def _set_persistence_reservoir_da_params(run_results):
             tmp_usgs['prev_persisted_outflow'] = r[4][2]
             tmp_usgs['persistence_update_time'] = r[4][4]
             tmp_usgs['persistence_index'] = r[4][3]
-            reservoir_usgs_param_df = pd.concat([reservoir_usgs_param_df, tmp_usgs])
+            usgs_frames.append(tmp_usgs)
         
         if len(r[5][0]) > 0:
             tmp_usace = pd.DataFrame(data = r[5][1], index = r[5][0], columns = ['update_time'])
             tmp_usace['prev_persisted_outflow'] = r[5][2]
             tmp_usace['persistence_update_time'] = r[5][4]
             tmp_usace['persistence_index'] = r[5][3]
-            reservoir_usace_param_df = pd.concat([reservoir_usace_param_df, tmp_usace])
+            usace_frames.append(tmp_usace)
+    
+    if usgs_frames:
+        reservoir_usgs_param_df = pd.concat(usgs_frames)
+    else:
+        reservoir_usgs_param_df = pd.DataFrame(
+            columns=['update_time', 'prev_persisted_outflow', 'persistence_update_time', 'persistence_index']
+        )
+    
+    if usace_frames:
+        reservoir_usace_param_df = pd.concat(usace_frames)
+    else:
+        reservoir_usace_param_df = pd.DataFrame(
+            columns=['update_time', 'prev_persisted_outflow', 'persistence_update_time', 'persistence_index']
+        )
     
     return reservoir_usgs_param_df, reservoir_usace_param_df
 
@@ -1534,18 +1550,20 @@ def new_lastobs(run_results, time_increment):
     - lastobs_df (DataFrame): Last gage observations data for DA
     """
 
-    df = pd.concat(
-        [
-            pd.DataFrame(
-                # TODO: Add time_increment (or subtract?) from time_since_lastobs
-                np.array([rr[3][1],rr[3][2]]).T,
-                index=rr[3][0],
-                columns=["time_since_lastobs", "lastobs_discharge"]
-            )
-            for rr in run_results
-        ],
-        copy=False,
-    )
+    dfs = [
+        pd.DataFrame(
+            # TODO: Add time_increment (or subtract?) from time_since_lastobs
+            np.array([rr[3][1], rr[3][2]]).T,
+            index=rr[3][0],
+            columns=["time_since_lastobs", "lastobs_discharge"]
+        )
+        for rr in run_results
+    ]
+    valid_dfs = [d for d in dfs if not d.empty]
+    if valid_dfs:
+        df = pd.concat(valid_dfs, copy=False)
+    else:
+        df = pd.DataFrame(columns=["time_since_lastobs", "lastobs_discharge"])
     df["time_since_lastobs"] = df["time_since_lastobs"] - time_increment
 
     return df

@@ -22,6 +22,7 @@ from .preprocess import (
     unpack_nwm_preprocess_data,
 )
 from .output import nwm_output_generator
+from .output_nextgen import OutputWriter
 from .log_level_set import log_level_set
 from troute.routing.compute import compute_nhd_routing_v02, compute_diffusive_routing, compute_log_mc, compute_log_diff
 
@@ -53,6 +54,7 @@ def main_v04(argv):
         output_parameters,
         parity_parameters,
         data_assimilation_parameters,
+        config_dict,
     ) = _input_handler_v04(args)
     
     run_parameters = {
@@ -141,6 +143,27 @@ def main_v04(argv):
     forcing_end_time = time.time()
     task_times['forcing_time'] += forcing_end_time - network_end_time
 
+    # Initialize the output NetCDF file if user specified
+    output_start_time = time.time()
+    netcdf_output = output_parameters.get('netcdf_output', {})
+    output_writer = None
+    if netcdf_output and netcdf_output.get('output_path', None):
+        output_writer = OutputWriter(
+            cfg = config_dict,
+            output_cfg = netcdf_output,
+            all_network_ids = np.array(list(network.connections.keys())),
+            total_sim_seconds = run_parameters['dt'] * run_parameters['nts'],
+            start_time = network.t0,
+            dt = run_parameters['dt'],
+            rconn = network.reverse_network,
+            q0 = network.q0,
+            waterbody_df = network.waterbody_dataframe,
+            waterbody_types_df = network.waterbody_types_dataframe,
+            duplicate_ids_df = network._duplicate_ids_df,
+        )
+    output_end_time = time.time()
+    task_times['output_time'] += output_end_time - output_start_time
+    
     parallel_compute_method = compute_parameters.get("parallel_compute_method", None)
     subnetwork_target_size = compute_parameters.get("subnetwork_target_size", 1)
     qts_subdivisions = forcing_parameters.get("qts_subdivisions", 1)
@@ -204,7 +227,7 @@ def main_v04(argv):
 
         
         route_start_time = time.time()
-
+        
         run_results = nwm_route(
             network.connections, 
             network.reverse_network, 
@@ -255,7 +278,6 @@ def main_v04(argv):
         subnetwork_list = run_results[1]
         run_results = run_results[0]
 
-        
         route_end_time = time.time()
         task_times['route_time'] += route_end_time - route_start_time
 
@@ -300,6 +322,8 @@ def main_v04(argv):
 
         output_start_time = time.time()  
         
+        LOG.info(f"Handling output ...")
+        
         #TODO Update this to work with either network type...
         nwm_output_generator(
             run,
@@ -324,14 +348,26 @@ def main_v04(argv):
             logFileName            
         )
         
-
+        # Write single NetCDF file output method:
+        if output_writer:
+            output_writer.write_step(
+                run_results = run_results,
+                current_chunk_start_time = t0
+            )
+        
         output_end_time = time.time()
         task_times['output_time'] += output_end_time - output_start_time
-    
+
+        LOG.debug("output complete in %s seconds." % (time.time() - output_start_time))
+
         firstRun = False
     
     # end of for run_set_iterator, run in enumerate(run_sets):
     
+    output_start_time = time.time()
+    output_writer.close() if output_writer else None
+    output_end_time = time.time()
+    task_times['output_time'] += output_end_time - output_start_time
     
     task_times['total_time'] = time.time() - main_start_time
 

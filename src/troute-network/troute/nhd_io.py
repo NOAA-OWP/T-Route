@@ -2337,6 +2337,9 @@ def updated_flowveldepth(flowveldepth, nex_id, seg_id, mask_list):
         # Set the new 'Type' column as an index
         all_nex_data = all_nex_data.set_index('Type', append=True)
         
+        # Reindex to (n, f), (n, v), (n, d), ...
+        all_nex_data = all_nex_data.reindex(flowveldepth.columns, axis=1)
+        
     else:
         all_nex_data = pd.DataFrame()
     
