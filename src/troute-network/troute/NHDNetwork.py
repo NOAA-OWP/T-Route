@@ -9,11 +9,10 @@ import netCDF4
 from joblib import delayed, Parallel
 import pyarrow.parquet as pq
 
-from troute.nhd_network import reverse_dict, extract_waterbody_connections, gage_mapping, extract_connections, replace_waterbodies_connections
+from troute.nhd_network import reverse_dict, _extract_waterbody_connections, gage_mapping, extract_connections, replace_waterbodies_connections
 
 import logging
-from troute_ewts import MODULE_NAME
-LOG = logging.getLogger(MODULE_NAME)
+LOG = logging.getLogger("TROUTE")
 
 __showtiming__ = True #FIXME pass flag
 __verbose__ = True #FIXME pass verbosity
@@ -204,7 +203,7 @@ class NHDNetwork(AbstractNetwork):
         # map segment ids to waterbody ids
         self._waterbody_connections = {}
         if "waterbody" in cols:
-            self._waterbody_connections = extract_waterbody_connections(
+            self._waterbody_connections = _extract_waterbody_connections(
                 self.dataframe[["waterbody"]]
             )
             self._dataframe = self.dataframe.drop("waterbody", axis=1)

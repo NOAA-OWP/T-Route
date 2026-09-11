@@ -1,52 +1,115 @@
 """Basic Model Interface implementation for NGEN t-route."""
 from __future__ import annotations
+import pickle
+import typing
 import numpy as np
 from bmipy import Bmi
+from datetime import datetime, timezone
+import logging
 
-from .troute_model import Model
+from .troute_model import Model, BmiVars
 
-_COUNT_SUFFIX = "__count"
+if typing.TYPE_CHECKING:
+    from numpy.typing import NDArray
+
+LOG = logging.getLogger("TROUTE")
+
+try:
+    from ewts.helper import getenv_any
+    from ewts.logger import configure_existing_logger
+    TROUTE_USE_EWTS = True
+except ImportError:
+    TROUTE_USE_EWTS = False
 
 _VAR_NAME_UNITS_MAP = {
-    'land_surface_water_source__volume_flow_rate': ['streamflow_cms', 'm3 s-1'],
+    BmiVars.CATCHMENT_VALUE: ['streamflow_cms', 'm3 s-1'],
+    BmiVars.NEXUS_VALUE: ['streamflow_cms', 'm3 s-1'],
 }
 
 _OUTPUT_VAR_NAMES = []
 
 _INPUT_VAR_NAMES = [
-    "land_surface_water_source__id",
-    "land_surface_water_source__volume_flow_rate",
-    "upstream_id",
+    BmiVars.CATCHMENT_ID,
+    BmiVars.CATCHMENT_VALUE,
+    BmiVars.NEXUS_ID,
+    BmiVars.NEXUS_VALUE,
+    BmiVars.UPSTREAM_ID,
+    BmiVars.NGEN_DT,
 ]
 
+class StdoutStyleFormatter(logging.Formatter):
+
+    INFO_FORMAT = (
+        "%(asctime)s %(name)-8s %(levelname)-7s %(message)s"
+    )
+
+    DETAILED_FORMAT = (
+        "%(asctime)s %(name)-8s %(levelname)-7s "
+        "%(message)s "
+        "[%(filename)s.%(funcName)s(L%(lineno)s)]"
+    )
+
+    def format(self, record):
+        if record.levelno == logging.INFO:
+            self._style._fmt = self.INFO_FORMAT
+        else:
+            self._style._fmt = self.DETAILED_FORMAT
+
+        return super().format(record)
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    
+
+def _configure_stdout_logging():
+    LOG.setLevel(logging.INFO)
+
+    if not LOG.handlers:
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(StdoutStyleFormatter())
+        LOG.addHandler(handler)
+
+    LOG.propagate = False
 
 class BmiTroute(Bmi):
     _model: Model
-    _values: dict[str, np.ndarray]
 
     def __init__(self):
+        if TROUTE_USE_EWTS:
+            val = getenv_any("EWTS_USE_NGEN_BRIDGE", "").strip().lower()
+            if val in {"1", "true", "yes", "on"}:
+                configure_existing_logger(LOG)
+            else:
+                _configure_stdout_logging()
+                LOG.warning("ewts package installed but EWTS_USE_NGEN_BRIDGE not on. Falling back to default logging.")
+        else:
+            _configure_stdout_logging()
+
         super().__init__()
-        self._values = {
-            "land_surface_water_source__id": np.zeros(0, dtype=np.intc),
-            "land_surface_water_source__id" + _COUNT_SUFFIX: np.zeros(1, dtype=np.int64),
-            "land_surface_water_source__volume_flow_rate": np.zeros(0, dtype=float),
-            "land_surface_water_source__volume_flow_rate" + _COUNT_SUFFIX: np.zeros(1, dtype=np.int64),
-            "upstream_id": np.zeros(0, dtype=int),
+        self._values: dict[str, NDArray] = {
+            BmiVars.NGEN_DT: np.array([-1], dtype=np.intc),
+            BmiVars.NEXUS_ID: np.zeros(0, dtype=np.int64),
+            BmiVars.NEXUS_VALUE: np.zeros(0, dtype=np.double),
+            BmiVars.CATCHMENT_ID: np.zeros(0, dtype=np.int64),
+            BmiVars.CATCHMENT_VALUE: np.zeros(0, dtype=np.double),
+            BmiVars.UPSTREAM_ID: np.zeros(0, dtype=int),
         }
-        self._var_loc = "node"
-        self._var_grid_id = 0
-        self._time_units = "s"
-        self._start_time = 0.0
-        self._end_time = np.finfo("d").max
+        self._free_serialized()
 
     def initialize(self, bmi_cfg_file):
-        self._model = Model(bmi_cfg_file)
+        self._model = Model(bmi_cfg_file, self.get_start_time())
 
     def update(self):
-        self._model.update(self._values)
-    
+        self._model.run(self._values)
+        # clear current flow values
+        for inputs_var in [BmiVars.NEXUS_VALUE, BmiVars.CATCHMENT_VALUE]:
+            dtype = self._values[inputs_var].dtype
+            self._values[inputs_var] = np.zeros(0, dtype=dtype)
+
     def update_until(self, time):
-        while self._model._time < time:
+        if self._model.time < time:
             self.update()
 
     def set_value(self, var_name: str, src):
@@ -60,12 +123,21 @@ class BmiTroute(Bmi):
         src : array_like
             Array of new values.
         """
-        # special case for changing data size 
-        if var_name.endswith(_COUNT_SUFFIX):
-            source_var_name = var_name[:-len(_COUNT_SUFFIX)]
-            source = self._values.get(source_var_name)
-            self._values[source_var_name] = np.resize(source, int(src[0]))
-        self._values[var_name][:] = src
+        if var_name == "serialization_create":
+            self._serialize()
+        elif var_name == "serialization_state":
+            self._deserialize(src)
+        elif var_name == "serialization_free":
+            self._free_serialized()
+        elif var_name == "reset_time":
+            self._model.reset_time()
+        else:
+            _log_set_value(var_name, src)
+            var = self._values[var_name]
+            if len(src) == len(var):
+                var[:] = src
+            else:
+                self._values[var_name] = np.array(src, dtype=var.dtype, copy=True)
 
     def get_value(self, var_name: str):
         """Copy of values.
@@ -78,7 +150,7 @@ class BmiTroute(Bmi):
         output_df : pd.DataFrame
             Copy of values.
         """
-        return np.copy(self._values[var_name])
+        return np.copy(self.get_value_ptr(var_name))
 
     def get_value_ptr(self, var_name: str):
         """Reference to values.
@@ -91,29 +163,33 @@ class BmiTroute(Bmi):
         array_like
             Value array.
         """
+        if var_name == "serialization_state":
+            return self._serialized
+        if var_name == "serialization_size" or var_name == "serialization_create":
+            return self._serialized_size
         return self._values[var_name]
 
     def get_start_time(self):
         """Start time of model."""
-        return self._start_time
+        return 0.0
 
     def get_end_time(self):
         """End time of model."""
-        return self._end_time
+        return float(self._model.ngen_dt(self._values) * (self._model.nts - 1))
 
     def get_current_time(self):
         return self._model.time
 
     def get_time_step(self):
-        return self._model.dt
+        return self._model.ngen_dt(self._values)
 
     def get_time_units(self):
-        return self._time_units
+        return "s"
 
     def finalize(self):
         """Finalize model."""
         if self._model is not None:
-            self._model.run(self._values)
+            self._model.log_times()
             self._model = None
 
     # BMI functions that are not being used yet...
@@ -130,7 +206,7 @@ class BmiTroute(Bmi):
             self.update()
         self._model.dt = time_step
 
-    def get_var_type(self, var_name):
+    def get_var_type(self, var_name: str):
         """Data type of variable.
         Parameters
         ----------
@@ -141,7 +217,11 @@ class BmiTroute(Bmi):
         str
             Data type.
         """
-        return str(self.get_value(var_name).dtype)
+        if var_name == "serialization_free":
+            return np.dtype(np.intc).name
+        if var_name == "reset_time":
+            return np.dtype(np.double).name
+        return self.get_value_ptr(var_name).dtype.name
 
     def get_var_units(self, var_name: str):
         """Get units of variable.
@@ -156,7 +236,7 @@ class BmiTroute(Bmi):
         """
         return _VAR_NAME_UNITS_MAP[var_name][1]
 
-    def get_var_nbytes(self, var_name):
+    def get_var_nbytes(self, var_name: str):
         """Get units of variable.
         Parameters
         ----------
@@ -167,13 +247,18 @@ class BmiTroute(Bmi):
         int
             Size of data array in bytes.
         """
-        return self.get_value(var_name).nbytes
+        if var_name == "serialization_state":
+            return int(self._serialized_size[0])
+        if var_name == "serialization_free" or var_name == "reset_time":
+            return np.dtype(self.get_var_type(var_name)).itemsize
+        return self.get_value_ptr(var_name).nbytes
 
     def get_var_itemsize(self, name):
+        # needs to go through `get_var_type` for names without stored values
         return np.dtype(self.get_var_type(name)).itemsize
 
     def get_var_location(self, name):
-        return self._var_loc[name]
+        return "node"
 
     def get_var_grid(self, var_name):
         """Grid id for a variable.
@@ -321,3 +406,36 @@ class BmiTroute(Bmi):
 
     def get_grid_z(self, grid, z):
         raise NotImplementedError("get_grid_z")
+
+    def _serialize(self):
+        data = {
+            "values": self._values,
+            "model": self._model.create_state(),
+        }
+        # HIGHEST_PROTOCOL recommended for pickling pandas DataFrames
+        serialized = pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
+        self._serialized = np.array(
+            bytearray(serialized), dtype=self._serialized.dtype
+        )
+        self._serialized_size[0] = len(self._serialized)
+
+    def _deserialize(self, data):
+        deserialized = pickle.loads(bytes(data))
+        self._values = deserialized["values"]
+        self._model.load_state(deserialized["model"])
+        self._free_serialized()
+
+    def _free_serialized(self):
+        self._serialized = np.zeros(0, dtype=np.uint8)
+        self._serialized_size = np.zeros(1, dtype=np.uint64)
+
+
+def _log_set_value(var_name: str, array: np.ndarray):
+    size = array.size
+    if size > 5:
+        array = array[:4]
+        end = ", ..."
+    else:
+        end = ""
+    msg = f"Setting {var_name} with {size} elements: [{', '.join(map(str, array))}{end}]"
+    LOG.debug(msg)

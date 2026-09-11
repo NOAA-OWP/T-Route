@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -t troute -f docker/Dockerfile.troute .
+        run: docker build --target troute -t troute -f docker/Dockerfile.dev .
 
       # To run tests in a separate job
       # either save image artifact or upload to dockerhub

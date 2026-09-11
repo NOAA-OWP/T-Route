@@ -19,9 +19,11 @@ class Config(BaseModel):
     # TODO: not sure if default is None or {}. see nhd_io.read_config_file ~:100
     network_topology_parameters: Optional[NetworkTopologyParameters] = None
     # TODO: default appears to be {}. see nhd_io.read_config_file ~:138
-    compute_parameters: ComputeParameters = Field(default_factory=dict)
+    # default_factory must build the DECLARED type: pydantic does not validate
+    # defaults, and a bare {} broke model_dump of configs omitting the section.
+    compute_parameters: ComputeParameters = Field(default_factory=ComputeParameters)
     # TODO: default appears to be {}. see nhd_io.read_config_file ~:141
-    output_parameters: OutputParameters = Field(default_factory=dict)
+    output_parameters: OutputParameters = Field(default_factory=OutputParameters)
     bmi_parameters: Optional[BMIParameters] = None
 
     # TODO: `reservoir_data_assimilation_parameters` missing from `v3_doc.yaml` and only included
@@ -350,6 +352,30 @@ class Config(BaseModel):
         
         return values
 
+
+    @model_validator(mode='after')
+    def check_scaling_da_network_type(self) -> "Config":
+        """Reject scaling_da on non-NHF networks: no other driver constructs it,
+        so an enabled block would silently run with no assimilation. (-V3 bypasses
+        pydantic and carries its own copy of this check.) mode='after' on purpose:
+        the mode='before' validators above silently skip on plain-dict input.
+        """
+        try:
+            sda = self.compute_parameters.data_assimilation_parameters.streamflow_da
+            network_type = self.network_topology_parameters.supernetwork_parameters.network_type
+        except AttributeError:
+            # A section is absent entirely; nothing to cross-check.
+            return self
+        if sda is not None and sda.streamflow_scaling and network_type != "NHF":
+            raise ValueError(
+                f"streamflow_da.streamflow_scaling is true but network_type is "
+                f"{network_type!r}. The simple-scaling DA is implemented for the NHF "
+                "network only (-V5 CLI and the BMI driver); on any other network type "
+                "no driver constructs it, so the run would complete with NO "
+                "assimilation while looking successful. Set network_type: NHF, or "
+                "disable streamflow_scaling."
+            )
+        return self
 
     @model_validator(mode='before')
     @classmethod

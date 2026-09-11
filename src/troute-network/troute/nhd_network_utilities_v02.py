@@ -12,8 +12,7 @@ from joblib import delayed, Parallel
 import troute.nhd_io as nhd_io
 import troute.nhd_network as nhd_network
 
-from troute_ewts import MODULE_NAME
-LOG = logging.getLogger(MODULE_NAME)
+LOG = logging.getLogger("TROUTE")
 
 def build_connections(supernetwork_parameters):
     '''
@@ -98,7 +97,7 @@ def build_connections(supernetwork_parameters):
     # map segment ids to waterbody ids
     wbodies = {}
     if "waterbody" in cols:
-        wbodies = nhd_network.extract_waterbody_connections(
+        wbodies = nhd_network._extract_waterbody_connections(
             param_df[["waterbody"]]
         )
         param_df = param_df.drop("waterbody", axis=1)
@@ -191,9 +190,9 @@ def organize_independent_networks(connections, wbody_break_segments, gage_break_
             
         # break reaches at junctions
         else:
-            
-            # reaches will be broken between junctions
-            path_func = partial(nhd_network.split_at_junction, net)
+            # Fast path: dfs_decomposition's path_func=None inlines the
+            # equivalent of ``partial(nhd_network.split_at_junction, net)``.
+            path_func = None
 
         # construct network reaches with depth-first search alg.
         reaches_bytw[tw] = nhd_network.dfs_decomposition(net, path_func)
@@ -240,6 +239,14 @@ def build_channel_initial_state(
             0, index=segment_index, columns=["qu0", "qd0", "h0"], dtype="float32",
         )
   
+    # The kernel's initial-conditions array is four wide (qu0, qd0, h0, ql0) and it
+    # assigns the whole row at once, so a three-column frame fails outright with
+    # "shape mismatch: value array of shape (n,3) could not be broadcast to
+    # indexing result of shape (n,4)". Every branch above predates ql0, which is
+    # why the V3/V4 NHD runs stopped working. Zero is what a cold start means here.
+    if "ql0" not in q0:
+        q0["ql0"] = np.float32(0)
+
     # TODO: If needed for performance improvement consider filtering mask file on read.
     if not segment_index.empty:
         q0 = q0[q0.index.isin(segment_index)]
@@ -532,8 +539,14 @@ def build_da_sets(da_params, run_sets, t0):
     streamflow_da = da_params.get('streamflow_da', False)
     if streamflow_da:
         nudging = streamflow_da.get('streamflow_nudging', False)
-        
-    if not usgs_da and not usace_da and not nudging:
+
+    # The simple-scaling DA is a THIRD consumer of the USGS TimeSlices, and it does not
+    # require nudging to be on. Without it here, a scaling-DA-only config produced
+    # da_sets entries with no 'usgs_timeslice_files' key, and the DA silently ran with
+    # no observations -- a full, plausible, exit-0 run that was actually a control.
+    scaling = bool(streamflow_da) and streamflow_da.get('streamflow_scaling', False)
+
+    if not usgs_da and not usace_da and not nudging and not scaling:
         # if all DA capabilities are OFF, return empty dictionary
         da_sets = [{} for _ in run_sets]
     
@@ -576,7 +589,7 @@ def build_da_sets(da_params, run_sets, t0):
             )
 
             # identify available USGS TimeSlices in run set i
-            if (usgs_timeslices_folder and nudging) or (usgs_timeslices_folder and usgs_da):
+            if usgs_timeslices_folder and (nudging or usgs_da or scaling):
                 filenames_usgs = (timestamps.strftime('%Y-%m-%d_%H:%M:%S') 
                             + '.15min.usgsTimeSlice.ncdf').to_list()
                 

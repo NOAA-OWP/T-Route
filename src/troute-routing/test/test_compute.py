@@ -21,7 +21,7 @@ lastobs_wrongtime = {
     "time": -60,
 }  # Most recent observation 1 hour in the future (not really possible)
 lastobs_NaN = {
-    "obs": np.NaN,
+    "obs": np.nan,
     "time": np.datetime64("NaT"),
 }  # No valid recent observation
 all_lastobs = [lastobs, lastobs_old, lastobs_NaN]

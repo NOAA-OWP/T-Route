@@ -12,8 +12,7 @@ import troute.nhd_network_utilities_v02 as nnu
 import troute.nhd_network as nhd_network
 import troute.nhd_io as nhd_io
 
-from troute_ewts import MODULE_NAME
-LOG = logging.getLogger(MODULE_NAME)
+LOG = logging.getLogger("TROUTE")
 
 def _reindex_link_to_lake_id(target_df, crosswalk):
     '''

@@ -2,13 +2,13 @@ from abc import ABC, abstractmethod
 from functools import partial
 import pandas as pd
 import numpy as np
+import math
 import multiprocessing
 from datetime import datetime, timedelta
 
 import os
 import pathlib
 import time
-import logging
 import pyarrow as pa
 import pyarrow.parquet as pq
 import xarray as xr
@@ -18,21 +18,104 @@ from troute.nhd_network_utilities_v02 import organize_independent_networks
 import troute.nhd_io as nhd_io 
 from .AbstractRouting import MCOnly, MCwithDiffusive, MCwithDiffusiveNatlXSectionNonRefactored, MCwithDiffusiveNatlXSectionRefactored
 
-from troute_ewts import MODULE_NAME
-LOG = logging.getLogger(MODULE_NAME)
+import logging
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+LOG = logging.getLogger("TROUTE")
+
+def _scaling_da_spread_h(da_parameters: "Mapping[str, Any] | None") -> float:
+    """Hours of forcing every non-final window must cover for the scaling DA.
+
+    The larger of the innovation spread (whose halo is one window deep) and the
+    span the travel-time lag is measured over. Both decide results, so a window
+    shorter than either would let max_loop_size, a memory knob, change
+    discharge. Read straight off the raw config block rather than off a built
+    ScalingDA: the forcing windows are laid out before the DA object exists.
+    """
+    sda = (da_parameters or {}).get("streamflow_da") or {}
+    if not sda.get("streamflow_scaling"):
+        return 0.0
+    params = sda.get("streamflow_scaling_parameters") or {}
+    need = float(params.get("innovation_spread_h", 0.0))
+    if bool(params.get("travel_time_lag", False)):
+        # SUM, not max. The innovation is first averaged forward over
+        # innovation_spread_h, and the lag then reads that average at t + tau, so
+        # the last timestep of a window needs raw innovation out to
+        # tau_max + spread. Sizing on the larger of the two left the tail of that
+        # read past the halo, where it silently fell back to the terminal value,
+        # and how far past depended on where the boundary fell.
+        need += float(params.get("lag_window_h", 48.0))
+    return need
+
+
+def _require_span_covering_first_set(
+    run_sets: "list[dict[str, Any]]", spread_h: float, dt: "float | None"
+) -> None:
+    """Fail closed when explicit ``qlat_forcing_sets`` cannot host the DA span.
+
+    Explicit sets bypass the enlargement and the final-remainder fold, so a
+    short FIRST set would silently become the cached trace span and the
+    partition would change discharge. Raises only when the run could supply
+    the span but the partition does not; a genuinely short run warns and caps.
+    """
+    if not run_sets or spread_h <= 0 or not dt:
+        return
+    need = math.ceil(spread_h * 3600.0 / float(dt))
+    first = int(run_sets[0].get("nts") or 0)
+    total = sum(int(r.get("nts") or 0) for r in run_sets)
+    if first < need <= total:
+        raise ValueError(
+            f"qlat_forcing_sets: the first set supplies {first} timestep(s) but "
+            f"the scaling DA needs an opening window of {need} to cover "
+            "lag_window_h + innovation_spread_h, and the run is long enough to "
+            "supply it. The traced span is part of the result, so it must not "
+            "depend on the partition: enlarge the first set, lower lag_window_h "
+            "or innovation_spread_h, or set travel_time_lag: false."
+        )
+
+
+def _fold_short_final_set(run_sets: "list[dict[str, Any]]", spread_files: int) -> None:
+    """Fold a final remainder shorter than ``spread_files`` into the window before it.
+
+    The enlargement above exempts the FINAL window, which is right for the
+    forward halo (nothing follows it to read) and wrong for the travel-time lag:
+    a final window shorter than the lag reads across a boundary it cannot
+    supply, so the run's tail depends on where the boundaries fell. Measured on
+    the Ohio subset with a 12 h lag, a 4-file remainder differed from an evenly
+    divided run by 17.1 m3/s backward and 12.9 m3/s forward over the last four
+    hours; folding it in returns both to zero. Mutates ``run_sets`` in place.
+    """
+    if len(run_sets) < 2 or len(run_sets[-1]["qlat_files"]) >= spread_files:
+        return
+    tail = run_sets.pop()
+    LOG.info(
+        "scaling DA: final remainder of %d forcing file(s) folded into the window "
+        "before it, which then holds %d; a remainder shorter than the travel-time "
+        "span is not self-contained.",
+        len(tail["qlat_files"]),
+        len(run_sets[-1]["qlat_files"]) + len(tail["qlat_files"]),
+    )
+    run_sets[-1]["qlat_files"] += tail["qlat_files"]
+    run_sets[-1]["nts"] += tail["nts"]
+    run_sets[-1]["final_timestamp"] = tail["final_timestamp"]
+
 
 class AbstractNetwork(ABC):
     """
-    
+
     """
-    __slots__ = ["_dataframe", "_waterbody_connections", "_gages",  
-                "_terminal_codes", "_connections", "_waterbody_df", 
+    __slots__ = ["_dataframe", "_waterbody_connections", "_gages",
+                "_terminal_codes", "_connections", "_waterbody_df",
                 "_waterbody_types_df", "_waterbody_type_specified", "_link_gage_df",
                 "_canadian_gage_link_df",
                 "_independent_networks", "_reaches_by_tw", "_flowpath_dict",
-                "_reverse_network", "_q0", "_t0", "_link_lake_crosswalk",
-                "_usgs_lake_gage_crosswalk", "_usace_lake_gage_crosswalk", "_rfc_lake_gage_crosswalk",
-                "_qlateral", "_break_segments", "_segment_index", "_coastal_boundary_depth_df",
+                "_reverse_network",
+                "_q0", "_t0", "_link_lake_crosswalk",
+                "_usgs_lake_gage_crosswalk", "_usace_lake_gage_crosswalk", "_usbr_lake_gage_crosswalk", "_rfc_lake_gage_crosswalk",
+                "_qlateral", "_eloss", "_use_et_channel_loss", "_break_segments", "_segment_index", "_coastal_boundary_depth_df",
                 "supernetwork_parameters", "waterbody_parameters","data_assimilation_parameters",
                 "restart_parameters", "compute_parameters", "forcing_parameters",
                 "hybrid_parameters", "preprocessing_parameters", "output_parameters",
@@ -47,6 +130,8 @@ class AbstractNetwork(ABC):
         self._q0 = None
         self._t0 = None
         self._qlateral = None
+        self._eloss = None
+        self._use_et_channel_loss = False
         self._link_gage_df = None
         #qlat_const = forcing_parameters.get("qlat_const", 0)
         #FIXME qlat_const
@@ -107,6 +192,8 @@ class AbstractNetwork(ABC):
         qlat_file_value_col          = self.forcing_parameters.get("qlat_file_value_col", "q_lateral")
         qlat_file_gw_bucket_flux_col = self.forcing_parameters.get("qlat_file_gw_bucket_flux_col", "qBucket")
         qlat_file_terrain_runoff_col = self.forcing_parameters.get("qlat_file_terrain_runoff_col", "qSfcLatRunoff")
+        et_index_name               = self.forcing_parameters.get("et_file_index_col", "divide_id")
+        et_var_name                 = self.forcing_parameters.get("et_file_value_col", "ACTUAL_ET")  # Using Actual ET from the evapotranspiration module
 
     
         # TODO: find a better way to deal with these defaults and overrides.
@@ -118,6 +205,9 @@ class AbstractNetwork(ABC):
         run["qlat_file_value_col"]          = run.get("qlat_file_value_col", qlat_file_value_col)
         run["qlat_file_gw_bucket_flux_col"] = run.get("qlat_file_gw_bucket_flux_col", qlat_file_gw_bucket_flux_col)
         run["qlat_file_terrain_runoff_col"] = run.get("qlat_file_terrain_runoff_col", qlat_file_terrain_runoff_col)
+        run["et_index_name"]               = run.get("et_index_name", et_index_name)
+        run["et_var_name"]                 = run.get("et_var_name", et_var_name)
+
         
         #---------------------------------------------------------------------------
         # Assemble lateral inflow data
@@ -136,7 +226,33 @@ class AbstractNetwork(ABC):
             "lateral inflow DataFrame creation complete in %s seconds." \
                 % (time.time() - start_time)
                 )
-        self.assemble_coastal_coupling_data()
+
+        #---------------------------------------------------------------------------
+        # Assemble catchment ET data for channel loss
+        #---------------------------------------------------------------------------
+
+        if self._use_et_channel_loss:
+            start_time = time.time()
+            LOG.info("Creating a DataFrame of ET forcings ...")
+
+            self.build_et_array(
+                run,
+            )
+
+            # Saving ELoss outputs to disk for validation purposes
+            self._eloss.to_csv(self.forcing_parameters["et_input_folder"] / f"peadj_{self.forcing_parameters['peadj']}_eloss_calculated_values.csv")
+            
+            LOG.debug(
+                "ET DataFrame creation complete in %s seconds." \
+                    % (time.time() - start_time)
+                    )
+        else:
+            # Setting ET to all zeros since we won't be using
+            self._eloss = pd.DataFrame(0.0, index=self._qlateral.index, columns=self._qlateral.columns)
+        
+        # Dropping divide_id as it is no longer needed since catchment ET data has been mapped to wb-id
+        if "divide_id" in self._dataframe:
+            self._dataframe = self._dataframe.drop(columns=["divide_id"])
 
     def assemble_coastal_coupling_data(self):
         #---------------------------------------------------------------------
@@ -185,7 +301,7 @@ class AbstractNetwork(ABC):
         self._q0 = pd.concat(
             [
                 pd.DataFrame(
-                    r[1][:, [-3, -3, -1]], index=r[0], columns=["qu0", "qd0", "h0"]
+                    r[1][:, [-4, -4, -2, -1]], index=r[0], columns=["qu0", "qd0", "h0", "ql0"]
                 )
                 for r in run_results
             ],
@@ -215,7 +331,7 @@ class AbstractNetwork(ABC):
     @property
     def reverse_network(self):
         """
-        
+
         """
         if self._reverse_network is None:
             self._reverse_network = reverse_network(self.connections)
@@ -254,7 +370,9 @@ class AbstractNetwork(ABC):
                         split_at_waterbodies_and_junctions, self.network_break_segments, net
                     )
                 else:
-                    path_func = partial(split_at_junction, net)
+                    # Fast path: dfs_decomposition's path_func=None inlines the
+                    # equivalent of ``partial(split_at_junction, net)``.
+                    path_func = None
 
                 self._reaches_by_tw[tw] = dfs_decomposition(net, path_func)
         return self._reaches_by_tw
@@ -262,10 +380,18 @@ class AbstractNetwork(ABC):
     @property
     def waterbody_dataframe(self):
         return self._waterbody_df
+
+    @waterbody_dataframe.setter
+    def waterbody_dataframe(self, val):
+        self._waterbody_df = val
     
     @property
     def waterbody_types_dataframe(self):
         return self._waterbody_types_df
+
+    @waterbody_types_dataframe.setter
+    def waterbody_types_dataframe(self, val):
+        self._waterbody_types_df = val
     
     @property
     def waterbody_type_specified(self):
@@ -293,6 +419,21 @@ class AbstractNetwork(ABC):
         return self._qlateral
 
     @property
+    def eloss(self):
+        """
+        Channel loss as defined by:
+        ELOSS = (ET * PEADJ) * 0.27778/TIMINT * Aw
+        """
+        return self._eloss
+
+    @property
+    def use_et_channel_loss(self):
+        """
+        A boolean to describe if channel loss is being used
+        """
+        return self._use_et_channel_loss
+
+    @property
     def q0(self):
         """
             Initial channel segment flow values
@@ -300,7 +441,7 @@ class AbstractNetwork(ABC):
         """
         if self._q0 is None:
             self._q0 =  pd.DataFrame(
-            0, index=self._dataframe.index, columns=["qu0", "qd0", "h0"], dtype="float32",
+            0, index=self._dataframe.index, columns=["qu0", "qd0", "h0", "ql0"], dtype="float32",
             )
         return self._q0
 
@@ -347,20 +488,45 @@ class AbstractNetwork(ABC):
         return self._link_gage_df.copy()
 
     @property
-    def usgs_lake_gage_crosswalk(self):
+    def usgs_lake_gage_crosswalk(self) -> pd.DataFrame:
         return self._usgs_lake_gage_crosswalk
+
+    @usgs_lake_gage_crosswalk.setter
+    def usgs_lake_gage_crosswalk(self, val: pd.DataFrame):
+        self._usgs_lake_gage_crosswalk = val
     
     @property
-    def usace_lake_gage_crosswalk(self):
+    def usace_lake_gage_crosswalk(self) -> pd.DataFrame:
         return self._usace_lake_gage_crosswalk
+
+    @usace_lake_gage_crosswalk.setter
+    def usace_lake_gage_crosswalk(self, val: pd.DataFrame):
+        self._usace_lake_gage_crosswalk = val
+
+    @property
+    def usbr_lake_gage_crosswalk(self):
+        return self._usbr_lake_gage_crosswalk
+
+    @usbr_lake_gage_crosswalk.setter
+    def usbr_lake_gage_crosswalk(self, val: pd.DataFrame):
+        self._usbr_lake_gage_crosswalk = val
     
     @property
     def rfc_lake_gage_crosswalk(self):
         return self._rfc_lake_gage_crosswalk
 
+    @rfc_lake_gage_crosswalk.setter
+    def rfc_lake_gage_crosswalk(self, val: pd.DataFrame):
+        self._rfc_lake_gage_crosswalk = val
+
     @property
     @abstractmethod
     def waterbody_connections(self):
+        pass
+
+    @waterbody_connections.setter
+    @abstractmethod
+    def waterbody_connections(self, v):
         pass
 
     @property
@@ -369,13 +535,20 @@ class AbstractNetwork(ABC):
         pass
 
     @property
-    @abstractmethod
     def gages(self):
-        pass
+        return self._gages
+
+    @gages.setter
+    def gages(self, v):
+        self._gages = v
 
     @property
     def dataframe(self):
         return self._dataframe
+
+    @dataframe.setter
+    def dataframe(self, val):
+        self._dataframe = val
     
     @property
     def nexus_dict(self):
@@ -419,10 +592,18 @@ class AbstractNetwork(ABC):
     @property
     def great_lakes_climatology_df(self):
         return self._gl_climatology_df
+
+    @great_lakes_climatology_df.setter
+    def great_lakes_climatology_df(self, val):
+        self._gl_climatology_df = val
     
     @property
     def canadian_gage_df(self):
         return self._canadian_gage_link_df
+
+    @canadian_gage_df.setter
+    def canadian_gage_df(self, v):
+        self._canadian_gage_link_df = v
 
         
     def set_synthetic_wb_segments(self, synthetic_wb_segments, synthetic_wb_id_offset):
@@ -612,7 +793,9 @@ class AbstractNetwork(ABC):
                 else:
                     # TODO: Consider adding option to read cold state from route-link file
                     waterbodies_initial_ds_flow_const = 0.0
-                    waterbodies_initial_depth_const = -1e9
+                    # NOTE: Changing initial depth from -1e9 to OrificeE because it improves routing behavior when
+                    # inital state is unknown. Unsure of broader impacts.
+                    waterbodies_initial_depth_const = self.waterbody_dataframe["OrificeE"]
                     # Set initial states from cold-state
                     waterbodies_initial_states_df = pd.DataFrame(
                         0,
@@ -644,7 +827,9 @@ class AbstractNetwork(ABC):
                 else:
                     # TODO: Consider adding option to read cold state from route-link file
                     waterbodies_initial_ds_flow_const = 0.0
-                    waterbodies_initial_depth_const = -1e9
+                    # NOTE: Changing initial depth from -1e9 to OrificeE because it improves routing behavior when
+                    # inital state is unknown. Unsure of broader impacts.
+                    waterbodies_initial_depth_const = self.waterbody_dataframe["OrificeE"]
                     # Set initial states from cold-state
                     waterbodies_initial_states_df = pd.DataFrame(
                         0,
@@ -667,11 +852,14 @@ class AbstractNetwork(ABC):
                     self.waterbody_dataframe, waterbodies_initial_states_df, on=index_id
                 )
             else:
-                self._waterbody_df = pd.DataFrame()
+                self._waterbody_df = pd.DataFrame(columns=["qd0", "h0"])
             LOG.debug(
                 "waterbody initial states complete in %s seconds."\
                 % (time.time() - start_time))
             start_time = time.time()
+
+        else:
+            self._waterbody_df = pd.DataFrame(columns=["qd0", "h0"])
 
         #----------------------------------------------------------------------------
         # Assemble channel initial states (flow and depth)
@@ -712,10 +900,7 @@ class AbstractNetwork(ABC):
             else:
                 # Set cold initial state
                 # assume to be zero
-                # 0, index=connections.keys(), columns=["qu0", "qd0", "h0",], dtype="float32"
-                self._q0 = pd.DataFrame(
-                    0, index=self.segment_index, columns=["qu0", "qd0", "h0"], dtype="float32",
-                    )
+                # self._q0 is set to default on first getter call
                 
                 # get initial time from user inputs
                 self._t0 = restart_parameters.get("start_datetime")
@@ -749,9 +934,18 @@ class AbstractNetwork(ABC):
         stream_output = self.output_parameters.get('stream_output', None)
         run_sets           = forcing_parameters.get("qlat_forcing_sets", None)
         qlat_input_folder  = forcing_parameters.get("qlat_input_folder", None)
+        et_input_folder   = forcing_parameters.get("et_input_folder", None)
         nts                = forcing_parameters.get("nts", None)
         max_loop_size      = forcing_parameters.get("max_loop_size", 12)
         dt                 = forcing_parameters.get("dt", None)
+
+        # Explicit sets must host the DA span or fail before anything routes.
+        if run_sets:
+            _require_span_covering_first_set(
+                run_sets,
+                _scaling_da_spread_h(self.data_assimilation_parameters),
+                dt,
+            )
 
         try:
             qlat_input_folder = pathlib.Path(qlat_input_folder)
@@ -761,8 +955,20 @@ class AbstractNetwork(ABC):
         except AssertionError:
             raise AssertionError("Aborting simulation because the qlat_input_folder:", qlat_input_folder,"does not exist. Please check the the nexus_input_folder variable is correctly entered in the .yaml control file") from None
 
+        if et_input_folder is not None:
+            self._use_et_channel_loss = True
+            try:
+                et_input_folder = pathlib.Path(et_input_folder)
+                assert et_input_folder.is_dir() == True
+            except TypeError:
+                raise TypeError("Aborting simulation because no et_input_folder is specified in the forcing_parameters section of the .yaml control file.") from None
+            except AssertionError:
+                raise AssertionError("Aborting simulation because the et_input_folder:", et_input_folder,"does not exist. Please check the the nexus_input_folder variable is correctly entered in the .yaml control file") from None
+
         forcing_glob_filter = forcing_parameters["qlat_file_pattern_filter"]
         binary_folder = forcing_parameters.get('binary_nexus_file_folder', None)
+
+        et_glob_filter = forcing_parameters["et_file_pattern_filter"]
 
         if forcing_glob_filter=="nex-*" and binary_folder:
             print("Reformating qlat nexus files as hourly binary files...")
@@ -853,8 +1059,29 @@ class AbstractNetwork(ABC):
             nfiles = int(np.ceil(nts / qts_subdivisions))
             if stream_output:
                 stream_output_time = stream_output.get('stream_output_time', None)
-                if stream_output_time and stream_output_time > max_loop_size:
-                    max_loop_size = stream_output_time
+                # stream_output_time is HOURS; max_loop_size counts forcing
+                # FILES. Comparing them raw was only right for hourly forcing
+                # (-1 = whole run in one file, exempt).
+                if stream_output_time and stream_output_time > 0:
+                    sot_files = math.ceil(stream_output_time * 3600.0 / dt_qlat)
+                    if sot_files > max_loop_size:
+                        max_loop_size = sot_files
+            # The scaling DA's forward innovation window reads into the NEXT
+            # window's innovation, and that halo is exactly one window deep, so a
+            # window shorter than innovation_spread_h leaves its own tail on
+            # persistence and the result starts depending on the partition. The
+            # BMI driver enlarges for the same reason; this is the -V5 half.
+            spread_h = _scaling_da_spread_h(self.data_assimilation_parameters)
+            if spread_h > 0:
+                spread_files = math.ceil(spread_h * 3600.0 / dt_qlat)
+                if spread_files > max_loop_size:
+                    LOG.info(
+                        "scaling DA: max_loop_size enlarged %d -> %d forcing files "
+                        "so every non-final window covers the innovation spread "
+                        "and the travel-time measurement span.",
+                        max_loop_size, spread_files,
+                    )
+                    max_loop_size = spread_files
             # list of forcing file datetimes
             #datetime_list = [t0 + dt_qlat_timedelta * (n + 1) for n in
             #                 range(nfiles)]
@@ -918,6 +1145,52 @@ class AbstractNetwork(ABC):
                 nts_last = nts_accum
                 k += max_loop_size
                 j += 1
+
+            # A FINAL remainder shorter than the span is folded into the window
+            # before it. The enlargement above exempts the final window, which is
+            # right for the forward halo (nothing follows it to read) but wrong
+            # for the travel-time lag: a final window shorter than the lag reads
+            # across a boundary it cannot supply, so the run's tail depends on
+            # where the boundaries fell. Measured on the Ohio subset with a 12 h
+            # lag: a 4-file final remainder differed from an evenly divided run
+            # by 17.1 m3/s (backward) and 12.9 m3/s (forward) over the last four
+            # hours; folding it in returns both to zero.
+            if spread_h > 0:
+                _fold_short_final_set(run_sets, math.ceil(spread_h * 3600.0 / dt_qlat))
+
+        if self._use_et_channel_loss:
+            if et_glob_filter=="cat-*":  # will be called if using NGEN catchment files (cat-<CATCHMENT_ID>.csv)
+                print("Reformating ET catchment files into xr dataset")
+                et_files = et_input_folder.glob(et_glob_filter)
+                
+                et_ds = cat_files_to_binary(et_files)
+                forcing_parameters["et_input_folder"] = et_input_folder
+                forcing_parameters["et_file_pattern_filter"] = et_glob_filter
+
+                for i in range(len(run_sets)):
+                    run_sets[i]["et_forcing_ds"] = et_ds
+            elif et_glob_filter is not None:
+                raise NotImplementedError("ET reads are only implemented for catchment files at this time with a `cat-*` filter")
+
+        # REALIZED window, written back so downstream consumers describe the run
+        # that actually happened. max_loop_size is enlarged above to cover the
+        # scaling DA's travel-time horizon (and by stream_output_time), so a
+        # report reading the CONFIGURED value describes a partitioning that never
+        # ran. Taken from run_sets rather than the local, so it is correct in
+        # every branch of this function, including an explicit qlat_forcing_sets.
+        # The configured value is preserved alongside rather than overwritten;
+        # this function already writes qts_subdivisions back the same way.
+        if run_sets:
+            _dt = float(forcing_parameters.get("dt") or 0.0)
+            _nts = [int(r["nts"]) for r in run_sets if r.get("nts")]
+            if _dt and _nts:
+                forcing_parameters.setdefault(
+                    "max_loop_size_configured", forcing_parameters.get("max_loop_size")
+                )
+                # Non-final windows are uniform; the last one is the remainder.
+                forcing_parameters["max_loop_size_realized_h"] = (
+                    max(_nts) * _dt / 3600.0
+                )
 
         return run_sets
     
@@ -994,6 +1267,27 @@ def nex_files_to_binary(nexus_files, binary_folder):
     forcing_glob_filter = '*NEXOUT.parquet'
     
     return nexus_input_folder, forcing_glob_filter
+
+def cat_files_to_binary(cat_files):
+    """Converts catchment .csv files into a .nc binary"""
+    datasets = []
+    divide_ids = []
+    
+    for file in list(cat_files):
+        filename = os.path.basename(file)
+        divide_id = int(filename.split("-")[1].split(".")[0])  # Gets the ID from the catchment file
+        df = pd.read_csv(file)
+        df = df.rename(columns={"Time": "time"})
+        ds = df.set_index("time").to_xarray()
+        ds = ds.assign_coords(divide_id=divide_id)
+        datasets.append(ds)
+        divide_ids.append(divide_id)    
+    combined_ds = xr.concat(datasets, dim='divide_id')
+    
+    # Assign the divide_ids as coordinates for the catchment dimension
+    combined_ds = combined_ds.assign_coords(divide_id=divide_ids)
+    
+    return combined_ds
 
 def get_id_from_filename(file_name):
     id = os.path.splitext(file_name)[0].split('-')[1].split('_')[0]

@@ -18,9 +18,9 @@ import bmi_df2array as df2a
 from troute.routing.fast_reach.reservoir_RFC_da import _validate_RFC_data
 import netCDF4
 from troute.config import Config
+from nwm_routing.log_level_set import log_level_set
 
-from troute_ewts import configure_logging
-LOG = configure_logging()
+LOG = logging.getLogger("TROUTE")
 
 class DAforcing_model():
 
@@ -57,7 +57,6 @@ class DAforcing_model():
                      '_waterbodyLR_Array'                    
                      ]
 
-
         if bmi_cfg_file:
             (compute_parameters,
              forcing_parameters,
@@ -79,6 +78,7 @@ class DAforcing_model():
             
             usgs_persistence = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usgs', False)
             usace_persistence = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usace', False)
+            usbr_persistence = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usbr', False)
             rfc = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_rfc_da', {}).get('reservoir_rfc_forecasts', False)
 
             qc_threshold = data_assimilation_parameters.get('qc_threshold')
@@ -130,6 +130,14 @@ class DAforcing_model():
             # USACE Observations        
             if usace_persistence:
                 usace_timeslice_path = str(data_assimilation_parameters.get('usace_timeslices_folder'))
+                self._reservoir_usace_df = _read_timeslice_files(usace_timeslice_path, 
+                                                                 timeslice_dates,
+                                                                 qc_threshold,
+                                                                 900, #15 minutes
+                                                                 cpu_pool,)
+            
+            if usbr_persistence:
+                usace_timeslice_path = str(data_assimilation_parameters.get('usbr_timeslices_folder'))
                 self._reservoir_usace_df = _read_timeslice_files(usace_timeslice_path, 
                                                                  timeslice_dates,
                                                                  qc_threshold,
@@ -462,7 +470,7 @@ def _read_config_file(custom_input_file):
         data = yaml.load(custom_file, Loader=yaml.SafeLoader)
 
     troute_configuration = Config(**data)
-    config_dict = troute_configuration.dict()
+    config_dict = troute_configuration.model_dump()
 
     compute_parameters = config_dict.get("compute_parameters")
     forcing_parameters = compute_parameters.get("forcing_parameters")
@@ -491,7 +499,9 @@ def _read_timeslice_files(filepath,
         f = glob.glob(filepath + '/' + d + '*')
 
         if f:
-            temp_df = xr.open_dataset(f[0])[['stationId','time','discharge','discharge_quality']].to_dataframe()
+            # drop queryTime: its non-CF units crash xarray's decode on all-fill
+            # USACE slices, and nothing here reads it.
+            temp_df = xr.open_dataset(f[0], drop_variables="queryTime")[['stationId','time','discharge','discharge_quality']].to_dataframe()
             observation_df = pd.concat([observation_df, temp_df])
 
     if not observation_df.empty:
@@ -580,11 +590,15 @@ def _read_timeseries_files(filepath, timeseries_dates, t0, final_persist_datetim
     file_list = (df['Datetime'] + '.60min.' + df['ID'] + '.RFCTimeSeries.ncdf').tolist()
     rfc_df = pd.DataFrame()
     for f in file_list:
-        ds = xr.open_dataset(filepath + '/' + f)
+        # drop queryTime (non-CF units now raise on open; unused here) and force
+        # decode_timedelta (bmi_df2array calls .total_seconds() on timeSteps).
+        ds = xr.open_dataset(
+            filepath + '/' + f, drop_variables="queryTime", decode_timedelta=True
+        )
         sliceStartTime = datetime.strptime(ds.attrs.get('sliceStartTimeUTC'), '%Y-%m-%d_%H:%M:%S')
         sliceTimeResolutionMinutes = ds.attrs.get('sliceTimeResolutionMinutes')
         df = ds.to_dataframe().reset_index().sort_values('forecastInd')[['stationId','discharges','synthetic_values','totalCounts','timeSteps']]
-        df['Datetime'] = pd.date_range(sliceStartTime, periods=df.shape[0], freq=sliceTimeResolutionMinutes+'T')
+        df['Datetime'] = pd.date_range(sliceStartTime, periods=df.shape[0], freq=sliceTimeResolutionMinutes+'min')
         # Filter out forecasts that go beyond the rfc_persist_days parameter. This isn't necessary, but removes
         # excess data, keeping the dataframe of observations as small as possible.
         df = df[df['Datetime']<final_persist_datetime]
@@ -929,12 +943,13 @@ def write_flowveldepth_netcdf(values,
 
                         # Set data for each feature_id and time_step
                         ncfile.variables[var][:] = data_array
+                    # int64: NHF link ids (~1.26e15) wrap silently under int32.
                     feature_id = ncfile.createVariable(
                         varname='feature_id',
-                        datatype=np.int32,
+                        datatype=np.int64,
                         dimensions=('feature_id',),
                     )
-                    feature_id[:] = flowveldepth.index.to_numpy(dtype=np.int32)
+                    feature_id[:] = flowveldepth.index.to_numpy(dtype=np.int64)
                     feature_id.units = 'None'
                     feature_id.description = 'Feature IDs'
                     ###

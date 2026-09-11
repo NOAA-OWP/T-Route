@@ -11,6 +11,7 @@ module module_persistence_levelpool_hybrid_properties
                                           read_persistence_netcdf_real_2D_parameters, &
                                           handle_err
     use module_reservoir, only: reservoir_properties
+    use, intrinsic :: iso_c_binding, only: C_INT64_T
     use netcdf
     implicit none
 
@@ -21,7 +22,7 @@ module module_persistence_levelpool_hybrid_properties
         real    :: max_storage                  ! maximum storage (cubic meters)
         real    :: lake_area                    ! area of reservoir (km^2)
         real    :: orifice_elevation            ! orifice elevation (meters AMSL)
-        integer :: lake_number                  ! lake number
+        integer(C_INT64_T) :: lake_number                  ! lake number
         integer :: reservoir_type               ! reservoir type
         character(len=15) :: gage_id
         integer :: observation_lookback_hours
@@ -48,7 +49,7 @@ contains
         real,    intent(in)          :: lake_area                    ! area of lake (km^2)
         real,    intent(in)          :: lake_max_water_elevation     ! max water elevation (meters)
         real,    intent(in)          :: orifice_elevation            ! orifice elevation (meters AMSL)
-        integer, intent(in)          :: lake_number                  ! lake number
+        integer(C_INT64_T), intent(in) :: lake_number                  ! lake number
         integer, intent(in)          :: reservoir_type               ! reservoir type
         integer, intent(in)          :: observation_lookback_hours
         integer, intent(in)          :: observation_update_time_interval_seconds

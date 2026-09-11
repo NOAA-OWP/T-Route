@@ -1,6 +1,7 @@
 cimport numpy as np
 import numpy as np
 from libc.stdlib cimport malloc, free
+from libc.stdint cimport int64_t
 
 from troute.network.reach cimport compute_type, _Reach
 """
@@ -8,7 +9,7 @@ Externally defined symbols
 """
 
 cdef extern from "hybrid_structs.c":
-  void init_hybrid_reach(_Reach* reach, int lake_number,
+  void init_hybrid_reach(_Reach* reach, int64_t lake_number,
                             float dam_length, float area, float max_depth,
                             float orifice_area, float orifice_coefficient, float orifice_elevation,
                             float weir_coefficient, float weir_elevation, float weir_length,
@@ -29,7 +30,7 @@ cdef class MC_Hybrid(Reach):
     MC_Reservoir is a subclass of MC_Reach_Base_Class
   """
 
-  def __init__(self, long id, int lake_number, long[::1] upstream_ids, args, reservoir_type,
+  def __init__(self, int64_t id, int64_t lake_number, int64_t[::1] upstream_ids, args, reservoir_type,
               reservoir_parameter_file, start_date, usgs_timeslice_path, usace_timeslice_path,
               observation_lookback_hours, observation_update_time_interval_seconds):
 

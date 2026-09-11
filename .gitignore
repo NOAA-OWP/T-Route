@@ -80,4 +80,54 @@ bower_components/
 src/vendor/
 dist/
 
+# Build dirs #
+##############
 build/
+uv.lock
+output/
+
+# .vscode files #
+#################
+.vscode/
+
+# UV lock #
+###########
+uv.lock
+
+# data #
+########
+data/
+output/
+*.gif
+test/nhf/*/*/*.csv
+test/nhf/*/*/*.nc
+test/nhf/four_lakes/reservoir_da/*/*.ncdf
+benchmark/conus_lakes/channel_forcing/*.nc
+
+# development #
+###############
+dev/
+
+# Benchmark run artifacts. bench_da.py writes here by default; these are large
+# netCDF outputs and machine-specific timings, never source.
+benchmark/output_bench_da/
+benchmark/figures/bench_da_*.json
+# A trailing slash matches directories only, so the `data/` rule above does not
+# cover a symlink named data. Local benchmark datasets are often symlinked in.
+benchmark/data
+
+# Transient run artifacts the scaling-DA harnesses write beside their configs:
+# per-fold holdout lists, rendered A/B configs, and forecast-mode output dirs.
+benchmark/_holdout_loo*.txt
+benchmark/_fc_*.yaml
+benchmark/output_fc_*/
+benchmark/output_ohio_*/
+benchmark/output_conus_*/
+
+# Same thing at the repo root. Harnesses resolve output through benchmark/paths.py
+# now, but a config run by hand still writes stream_output_directory relative to the
+# cwd, and an empty directory is invisible to git until the first file lands in it.
+/output_*/
+
+# clang debug symbol bundles from targeted extension builds
+*.dSYM/

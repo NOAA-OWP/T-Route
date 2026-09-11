@@ -9,6 +9,11 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 
+# Obsolete against the current package layout: the BMI model lives in troute_nwm_bmi
+# and no bmi_troute module is installed. Skip the file rather than let its import
+# error abort collection for the whole directory. Pending rewrite.
+pytest.importorskip("bmi_troute", reason="obsolete module path; see troute_nwm_bmi")
+
 from bmi_troute import bmi_troute, _read_config_file
 from test import temporarily_change_dir
 

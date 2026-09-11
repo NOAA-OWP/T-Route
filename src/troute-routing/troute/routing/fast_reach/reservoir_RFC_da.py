@@ -158,7 +158,19 @@ def preprocess_RFC_data(model_start_date,
     
     file_path= os.path.join(rfc_timeseries_folder, rfc_timeseries_file)
     if os.path.isfile(file_path):
-        rfc_da_df = xr.open_dataset(rfc_timeseries_folder + rfc_timeseries_file).to_dataframe()
+        # Two xarray compatibility guards, both needed:
+        #   drop_variables: queryTime carries the non CF compliant units
+        #     "seconds since 1970-01-01 00:00:00 local TZ". xarray tolerated it
+        #     until 2025 and now raises on open. Nothing here reads queryTime.
+        #   decode_timedelta: xarray stopped decoding a bare "seconds" unit into
+        #     timedelta64 by default. timeSteps is one, and
+        #     _timeseries_idx_updatetime_totalcounts parses str(timeSteps)[-8:] as
+        #     "%H:%M:%S", which needs the timedelta form and not a raw int.
+        rfc_da_df = xr.open_dataset(
+            rfc_timeseries_folder + rfc_timeseries_file,
+            drop_variables="queryTime",
+            decode_timedelta=True,
+        ).to_dataframe()
         timeseries_discharges = rfc_da_df.discharges.to_numpy()
         synthetic             = rfc_da_df.synthetic_values.to_numpy()
         # compute initial values of time_series_index, time_series_update_time, and total counts of observed+forecated

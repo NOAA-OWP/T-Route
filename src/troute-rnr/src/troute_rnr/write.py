@@ -1,7 +1,14 @@
+import logging
+
 import numpy as np
 import pandas as pd
 
+from troute_rnr.logging import log_function_debug
 
+log = logging.getLogger(__name__)
+
+
+@log_function_debug()
 def write_flow_files(mapped_feature_id, reach, output_path):
     """Writes csv flow files for each rfc point"""
     times = reach.times

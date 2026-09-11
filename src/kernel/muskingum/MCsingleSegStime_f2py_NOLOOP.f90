@@ -1,6 +1,7 @@
 module muskingcunge_module
 
     use precis
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
     implicit none
 
 contains
@@ -23,7 +24,14 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
     real(prec), intent(in) :: depthp
     real(prec), intent(out) :: qdc, velc, depthc
     real(prec), intent(out) :: ck, cn, X
-    real(prec) :: z
+    real(prec) :: z, sqrt_s0, sqrt_1pz2
+    ! Hoist more loop-invariants out of secant2_h. sqrt_s0/n and
+    ! sqrt_s0/ncc save 2 divisions per call; bw_plus_2bfdz and
+    ! two_sqrt_1pz2 save another ~3 mul/adds per call. Across ~200
+    ! secant2_h calls/kernel * ~11k segments * 1728 ts, this removes
+    ! ~10B ops on the Tier A workload.
+    real(prec) :: sqrt_s0_over_n, sqrt_s0_over_ncc
+    real(prec) :: two_sqrt_1pz2, bw_plus_2bfdz
     real(prec) :: bfd, C1, C2, C3, C4
 
     !Uncomment next line for old initialization
@@ -61,10 +69,30 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
     endif
 
     !print *, bfd
-    if (n .le. 0.0_prec .or. s0 .le. 0.0_prec .or. z .le. 0.0_prec .or. bw .le. 0.0_prec) then
-        !print*, "Error in channel coefficients -> Muskingum cunge", n, s0, z, bw
-        !call hydro_stop("In MUSKINGCUNGE() - Error in channel coefficients")
+    ! Guard against invalid channel parameters (non-positive or NaN). NaN
+    ! inputs would otherwise propagate through sqrt(s0) into NaN velocity,
+    ! and `.le. 0.0_prec` alone is false for NaN under IEEE 754, so an
+    ! explicit ieee_is_nan check is required. Fail loud rather than
+    ! silently producing zeroed or NaN-tainted output.
+    if (n  .le. 0.0_prec .or. ieee_is_nan(n)  .or. &
+        s0 .le. 0.0_prec .or. ieee_is_nan(s0) .or. &
+        z  .le. 0.0_prec .or. ieee_is_nan(z)  .or. &
+        bw .le. 0.0_prec .or. ieee_is_nan(bw)) then
+        write(*,*) "ERROR: muskingcungenwm received invalid channel parameter " // &
+            "(NaN or non-positive). n=", n, " s0=", s0, " z=", z, " bw=", bw
+        error stop "muskingcungenwm: invalid channel parameter (NaN or non-positive)"
     end if
+
+    ! Loop-invariant transcendentals, hoisted out of secant2_h (called up
+    ! to ~200x per kernel call) so they are computed once, not per call.
+    sqrt_s0   = sqrt(s0)
+    sqrt_1pz2 = sqrt(1.0_prec + z*z)
+    ! Step 9: additional loop-invariants hoisted out of secant2_h's
+    ! Ck formula. These are constants across the Secant iteration.
+    sqrt_s0_over_n   = sqrt_s0 / n
+    sqrt_s0_over_ncc = sqrt_s0 / ncc
+    two_sqrt_1pz2    = 2.0_prec * sqrt_1pz2
+    bw_plus_2bfdz    = bw + 2.0_prec * bfd * z
 
     depthc = max(depthp, 0.0_prec)
     h     = (depthc * 1.33_prec) + mindepth !1.50 of  depthc
@@ -90,9 +118,13 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
 
             !Uncomment next four lines for new initialization
             call secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
-                qdp, ql, qup, quc, h_0, 1, Qj_0, C1, C2, C3, C4, X)
+                qdp, ql, qup, quc, h_0, 1, Qj_0, C1, C2, C3, C4, X, &
+                sqrt_s0, sqrt_1pz2, sqrt_s0_over_n, sqrt_s0_over_ncc, &
+                two_sqrt_1pz2, bw_plus_2bfdz)
             call secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
-                qdp, ql, qup, quc, h, 2, Qj, C1, C2, C3, C4, X)
+                qdp, ql, qup, quc, h, 2, Qj, C1, C2, C3, C4, X, &
+                sqrt_s0, sqrt_1pz2, sqrt_s0_over_n, sqrt_s0_over_ncc, &
+                two_sqrt_1pz2, bw_plus_2bfdz)
 
             if(Qj_0-Qj .ne. 0.0_prec) then
                 h_1 = h - ((Qj * (h_0 - h))/(Qj_0 - Qj)) !update h, 3rd estimate
@@ -160,13 +192,17 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
             !qdc = -333.3
         endif
 
-        call hydraulic_geometry(h, bfd, bw, twcc, z, twl, R)
+        ! Step 9b: the hydraulic_geometry call here was wasted -- only twl is
+        ! used by the velocity calc below; its R is immediately overwritten
+        ! by the legacy formula. Compute twl inline (one line) and skip the
+        ! subroutine call. Bit-identical (twl computation matches exactly).
+        twl = bw + 2.0_prec * z * h
         !TODO: The following line allows the system to reproduce the current
         !velocity calculation, however the hydraulic radius provided is not
         !taking into account the flood-plan flow, nor is the velocity
         !accouting for the variation in Manning n.
         R = (h*(bw + twl) / 2.0_prec) / (bw + 2.0_prec*(((twl - bw) / 2.0_prec)**2.0_prec + h**2.0_prec)**0.5_prec)
-        velc = (1.0_prec/n) * (R **(2.0_prec/3.0_prec)) * sqrt(s0)  !*average velocity in m/s
+        velc = (1.0_prec/n) * (R **(2.0_prec/3.0_prec)) * sqrt_s0  !*average velocity in m/s
         depthc = h
     else   !*no flow to route
         qdc = 0.0_prec
@@ -196,7 +232,9 @@ end subroutine muskingcungenwm
 
 !Uncomment this function signature for new initialization
 subroutine secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
-    qdp, ql, qup, quc, h, interval, Qj, C1, C2, C3, C4, X)
+    qdp, ql, qup, quc, h, interval, Qj, C1, C2, C3, C4, X, &
+    sqrt_s0, sqrt_1pz2, &
+    sqrt_s0_over_n, sqrt_s0_over_ncc, two_sqrt_1pz2, bw_plus_2bfdz)
 
     implicit none
 
@@ -204,10 +242,17 @@ subroutine secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
     real(prec), intent(in) :: dt, dx
     real(prec), intent(in) :: qdp, ql, qup, quc
     real(prec), intent(in) :: h
+    ! sqrt(s0) and sqrt(1+z*z) precomputed once by the caller -- see
+    ! muskingcungenwm; this routine runs up to ~200x per kernel call.
+    real(prec), intent(in) :: sqrt_s0, sqrt_1pz2
+    ! Step 9 additional hoisted invariants (rs_route-inspired). All
+    ! constant across the Secant iteration; pre-computed by the caller.
+    real(prec), intent(in) :: sqrt_s0_over_n, sqrt_s0_over_ncc
+    real(prec), intent(in) :: two_sqrt_1pz2, bw_plus_2bfdz
     real(prec), intent(out) :: Qj, C1, C2, C3, C4, X
     integer,    intent(in) :: interval
 
-    real(prec) :: twl, AREA, WP, R
+    real(prec) :: twl, AREA, WP, R, r_23, s3
     real(prec) :: Ck, Cn, Km, D
     integer    :: upper_interval, lower_interval
 
@@ -241,27 +286,31 @@ subroutine secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
     lower_interval = 2
 
 
-    call hydraulic_geometry(h, bfd, bw, twcc, z, &
+    call hydraulic_geometry(h, bfd, bw, twcc, z, sqrt_1pz2, &
         twl, R, AREA, AREAC, WP, WPC)
+
+    ! Strength-reduce the hydraulic-radius powers: compute R**(2/3) once,
+    ! then R**(5/3) = R**(2/3) * R -- replaces a pow() with a multiply.
+    r_23 = R**(2.0_prec/3.0_prec)
 
     !**kinematic celerity, c
     if( (h .gt. bfd) .and. (twcc .gt. 0.0_prec) .and. (ncc .gt. 0.0_prec) ) then
     !*water outside of defined channel weight the celerity by the contributing area, and
     !*assume that the mannings of the spills is 2x the manning of the channel
-        Ck = max(0.0_prec,((sqrt(s0)/n) &
-            * ((5.0_prec/3.0_prec)*R**(2.0_prec/3.0_prec) &
-            - ((2.0_prec/3.0_prec)*R**(5.0_prec/3.0_prec) &
-            * (2.0_prec*sqrt(1.0_prec + z*z)/(bw+2.0_prec*bfd*z)))) &
+        Ck = max(0.0_prec,(sqrt_s0_over_n &
+            * ((5.0_prec/3.0_prec)*r_23 &
+            - ((2.0_prec/3.0_prec)*(r_23*R) &
+            * (two_sqrt_1pz2/bw_plus_2bfdz))) &
             * AREA &
-            + ((sqrt(s0)/(ncc))*(5.0_prec/3.0_prec) &
+            + (sqrt_s0_over_ncc*(5.0_prec/3.0_prec) &
             * (h-bfd)**(2.0_prec/3.0_prec))*AREAC) &
             / (AREA+AREAC))
     else
         if(h .gt. 0.0_prec) then !avoid divide by zero
-            Ck = max(0.0_prec,(sqrt(s0)/n) &
-                * ((5.0_prec/3.0_prec)*R**(2.0_prec/3.0_prec) &
-                - ((2.0_prec/3.0_prec)*R**(5.0_prec/3.0_prec) &
-                * (2.0_prec*sqrt(1.0_prec + z*z)/(bw+2.0_prec*h*z)))))
+            Ck = max(0.0_prec, sqrt_s0_over_n &
+                * ((5.0_prec/3.0_prec)*r_23 &
+                - ((2.0_prec/3.0_prec)*(r_23*R) &
+                * (two_sqrt_1pz2/(bw+2.0_prec*h*z)))))
         else
             Ck = 0.0_prec
         endif
@@ -311,10 +360,15 @@ subroutine secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
     C3 =  (Km*(1.0_prec-X)-dt/2.0_prec)/D
     C4 =  (ql*dt)/D
 
+    ! Step 9: cache the C1/C2/C3-weighted upstream sum used both in the
+    ! C4 channel-loss adjustment and in the Qj residual below. Order of
+    ! ops is preserved -- pure CSE, bit-exact to the original.
+    s3 = (C1*qup) + (C2*quc) + (C3*qdp)
+
     !H
     if (interval .eq. lower_interval) then
-        if( (C4 .lt. 0.0_prec) .and. (abs(C4) .gt. (C1*qup)+(C2*quc)+(C3*qdp)))  then
-            C4 = -((C1*qup)+(C2*quc)+(C3*qdp))
+        if( (C4 .lt. 0.0_prec) .and. (abs(C4) .gt. s3))  then
+            C4 = -s3
         endif
     endif
     !!Uncomment to show WP/WPC behavior above bankfull
@@ -325,8 +379,8 @@ subroutine secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
     !endif
 
     if((WP+WPC) .gt. 0.0_prec) then  !avoid divide by zero
-        Qj =  ((C1*qup)+(C2*quc)+(C3*qdp) + C4) - ((1.0_prec/(((WP*n)+(WPC*ncc))/(WP+WPC))) * &
-                (AREA+AREAC) * (R**(2.0_prec/3.0_prec)) * sqrt(s0)) !f(x)
+        Qj =  (s3 + C4) - ((1.0_prec/(((WP*n)+(WPC*ncc))/(WP+WPC))) * &
+                (AREA+AREAC) * r_23 * sqrt_s0) !f(x)
     else
         Qj = 0.0_prec
     endif
@@ -347,16 +401,18 @@ subroutine courant(h, bfd, bw, twcc, ncc, s0, n, z, dx, dt, ck, cn)
     real(prec), intent(in) :: ncc, s0, n, dx, dt
     real(prec), intent(out) :: ck
     real(prec), intent(out) :: cn
-    real(prec) :: h_gt_bf, h_lt_bf, AREA, AREAC, WP, WPC, R
+    real(prec) :: h_gt_bf, h_lt_bf, AREA, AREAC, WP, WPC, R, sqrt_1pz2
     real(prec) :: twl !UNUSED -- needed only for hydraulic_geometry call
 
-    call hydraulic_geometry(h, bfd, bw, twcc, z, &
+    sqrt_1pz2 = sqrt(1.0_prec + z*z)
+
+    call hydraulic_geometry(h, bfd, bw, twcc, z, sqrt_1pz2, &
         twl, R, AREA, AREAC, WP, WPC, h_lt_bf, h_gt_bf)
 
     ck = max(0.0_prec,((sqrt(s0)/n) &
         * ((5.0_prec/3.0_prec)*R**(2.0_prec/3.0_prec) &
         - ((2.0_prec/3.0_prec)*R**(5.0_prec/3.0_prec) &
-        * (2.0_prec*sqrt(1.0_prec + z*z)/(bw+2.0_prec*h_lt_bf*z)))) &
+        * (2.0_prec*sqrt_1pz2/(bw+2.0_prec*h_lt_bf*z)))) &
         * AREA &
         + ((sqrt(s0)/(ncc))*(5.0_prec/3.0_prec) &
         * (h_gt_bf)**(2.0_prec/3.0_prec))*AREAC) &
@@ -371,50 +427,46 @@ end subroutine courant
 !*           Hydraulic Geometry SUBROUTINE             *!
 !*                                                     *!
 !**---------------------------------------------------**!
-subroutine hydraulic_geometry(h, bfd, bw, twcc, z, &
+subroutine hydraulic_geometry(h, bfd, bw, twcc, z, sqrt_1pz2, &
     twl, R, AREA, AREAC, WP, WPC, h_lt_bf, h_gt_bf)
 
     implicit none
 
     real(prec), intent(in) :: h, bfd, bw, twcc, z
+    real(prec), intent(in) :: sqrt_1pz2  ! sqrt(1+z*z), precomputed by caller
     real(prec), intent(out), optional :: twl, R, AREA, AREAC, WP, WPC
     real(prec) :: twl_loc, R_loc, AREA_loc, AREAC_loc, WP_loc, WPC_loc
     real(prec), intent(out), optional :: h_gt_bf, h_lt_bf
     real(prec) :: h_gt_bf_loc, h_lt_bf_loc
 
-    twl_loc = 0.0_prec
-    R_loc = 0.0_prec
-    AREA_loc = 0.0_prec
-    AREAC_loc = 0.0_prec
-    WP_loc = 0.0_prec
-    WPC_loc = 0.0_prec
-
     twl_loc = bw + 2.0_prec*z*h
 
-    h_gt_bf_loc = max(h - bfd, 0.0_prec)
-    h_lt_bf_loc = min(bfd, h)
-    
-    ! Exception for NWM 3.0 channel geometry:
-    ! if depth is beyond bankfull, but the floodplain width is zero,
-    ! then just extend the trapezoidal channel upwards beyond bankfull
-    if ( (h_gt_bf_loc .gt. 0.0_prec) .and. (twcc .le. 0.0_prec) ) then
-        h_gt_bf_loc = 0.0_prec
+    ! Step 9 (rs_route-inspired): split into in-channel vs floodplain
+    ! paths. The in-channel case (h <= bfd, or h > bfd with twcc <= 0,
+    ! which the NWM 3.0 exception treats as in-channel) is the common
+    ! one in practice -- most channel cells run below bankfull. The
+    ! else-branch below skips the AREAC/WPC/h_gt_bf computations that
+    ! would always be 0 anyway. Bit-identical to the original branchy
+    ! form for both cases.
+    if (h .le. bfd .or. twcc .le. 0.0_prec) then
+        ! Water entirely within the channel cross-section.
         h_lt_bf_loc = h
-    endif
-
-    AREA_loc = (bw + h_lt_bf_loc * z ) * h_lt_bf_loc
-
-    WP_loc = (bw + 2 * h_lt_bf_loc * sqrt(1 + z*z))
-
-    AREAC_loc = (twcc * h_gt_bf_loc)
-
-    if(h_gt_bf_loc .gt. 0.0_prec) then
-        WPC_loc = twcc + (2 * (h_gt_bf_loc))
+        h_gt_bf_loc = 0.0_prec
+        AREA_loc    = (bw + h * z) * h
+        WP_loc      = bw + 2.0_prec * h * sqrt_1pz2
+        AREAC_loc   = 0.0_prec
+        WPC_loc     = 0.0_prec
+        R_loc       = AREA_loc / WP_loc
     else
-        WPC_loc = 0
+        ! Floodplain (compound channel) case.
+        h_gt_bf_loc = h - bfd
+        h_lt_bf_loc = bfd
+        AREA_loc    = (bw + bfd * z) * bfd
+        WP_loc      = bw + 2.0_prec * bfd * sqrt_1pz2
+        AREAC_loc   = twcc * h_gt_bf_loc
+        WPC_loc     = twcc + 2.0_prec * h_gt_bf_loc
+        R_loc       = (AREA_loc + AREAC_loc) / (WP_loc + WPC_loc)
     endif
-
-    R_loc   = (AREA_loc + AREAC_loc)/(WP_loc + WPC_loc)
     !R = (h*(bw + twl) / 2.0_prec) / (bw + 2.0_prec*(((twl - bw) / 2.0_prec)**2.0_prec + h**2.0_prec)**0.5_prec)
     if (present(twl)) then
         twl = twl_loc

@@ -26,7 +26,7 @@ contains
         lake_area, weir_elevation, weir_coeffecient, &
         weir_length, dam_length, orifice_elevation, orifice_coefficient, &
         orifice_area, max_depth, lake_number, wbody_type_code) BIND(C, NAME='init_lp')
-            USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_F_POINTER
+            USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_F_POINTER, C_INT64_T
             TYPE(C_PTR), INTENT(IN), VALUE :: handle
             real, intent(inout) :: water_elevation           ! meters AMSL
             real, intent(in)    :: lake_area                 ! area of lake (km^2)
@@ -38,7 +38,7 @@ contains
             real, intent(in)    :: orifice_coefficient       ! orifice coefficient
             real, intent(in)    :: orifice_area              ! orifice area (meters^2)
             real, intent(in)    :: max_depth                 ! max depth of reservoir before overtop (meters)
-            integer, intent(in) :: lake_number               ! lake number
+            integer(C_INT64_T), intent(in) :: lake_number               ! lake number
             integer, intent(in) :: wbody_type_code           ! lake number
             type (levelpool), POINTER :: levelpool_ptr ! ptr to LP object
             CALL C_F_POINTER(handle, levelpool_ptr)

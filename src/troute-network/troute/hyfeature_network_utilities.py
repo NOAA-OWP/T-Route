@@ -14,8 +14,7 @@ import pyarrow.parquet as pq
 
 import troute.nhd_io as nhd_io
 
-from troute_ewts import MODULE_NAME
-LOG = logging.getLogger(MODULE_NAME)
+LOG = logging.getLogger("TROUTE")
 
 def build_da_sets(da_params, run_sets, t0):
     """
@@ -47,6 +46,10 @@ def build_da_sets(da_params, run_sets, t0):
         "usace_timeslices_folder",
         None
     )
+    usbr_timeslices_folder = da_params.get(
+        "usbr_timeslices_folder",
+        None
+    )
     canada_timeslices_folder = da_params.get(
         "canada_timeslices_folder",
         None
@@ -58,24 +61,37 @@ def build_da_sets(da_params, run_sets, t0):
     # User-specified DA ON/OFF preferences
     usace_da = False
     usgs_da = False
+    # Bound here, not only inside the reservoir_persistence_da branch below: the
+    # `not usbr_da` test further down runs unconditionally, so a config with
+    # streamflow nudging and no reservoir persistence DA raised UnboundLocalError
+    # before it could build a single TimeSlice set.
+    usbr_da = False
     GreatLakes_da = False
     reservoir_persistence_da = da_params.get('reservoir_da', {}).get('reservoir_persistence_da', False)
     if reservoir_persistence_da:
         usgs_da = reservoir_persistence_da.get('reservoir_persistence_usgs', False)
         usace_da = reservoir_persistence_da.get('reservoir_persistence_usace', False)
+        usbr_da = reservoir_persistence_da.get('reservoir_persistence_usbr', False)
         GreatLakes_da = reservoir_persistence_da.get('reservoir_persistence_greatLake', False)
 
     nudging = False
     streamflow_da = da_params.get('streamflow_da', False)
     if streamflow_da:
         nudging = streamflow_da.get('streamflow_nudging', False)
-        
-    if not usgs_da and not usace_da and not GreatLakes_da and not nudging:
+
+    # The scaling DA is a third TimeSlice consumer and does not require nudging;
+    # without it here a scaling-only config got no per-window file list and fell
+    # back to globbing the whole directory. Same gate exists in
+    # nhd_network_utilities_v02.build_da_sets -- keep both.
+    scaling = bool(streamflow_da) and streamflow_da.get('streamflow_scaling', False)
+
+    if (not usgs_da and not usace_da and not usbr_da and not GreatLakes_da
+            and not nudging and not scaling):
         # if all DA capabilities are OFF, return empty dictionary
         da_sets = [{} for _ in run_sets]
     
     # if no user-input timeslice folders, a list of empty dictionaries
-    elif not usgs_timeslices_folder and not usace_timeslices_folder and not canada_timeslices_folder:
+    elif not usgs_timeslices_folder and not usace_timeslices_folder and not usbr_timeslices_folder and not canada_timeslices_folder:
         # if no timeslice folders, return empty dictionary
         da_sets = [{} for _ in run_sets]
         
@@ -87,6 +103,8 @@ def build_da_sets(da_params, run_sets, t0):
             usgs_timeslices_folder = pathlib.Path(usgs_timeslices_folder)
         if usace_timeslices_folder:
             usace_timeslices_folder = pathlib.Path(usace_timeslices_folder)
+        if usbr_timeslices_folder:
+            usbr_timeslices_folder = pathlib.Path(usbr_timeslices_folder)
         if canada_timeslices_folder:
             canada_timeslices_folder = pathlib.Path(canada_timeslices_folder)
         if LakeOntario_outflow:
@@ -117,7 +135,7 @@ def build_da_sets(da_params, run_sets, t0):
             )
 
             # identify available USGS TimeSlices in run set i
-            if (usgs_timeslices_folder and nudging) or (usgs_timeslices_folder and usgs_da):
+            if usgs_timeslices_folder and (nudging or usgs_da or scaling):
                 filenames_usgs = (timestamps.strftime('%Y-%m-%d_%H:%M:%S') 
                             + '.15min.usgsTimeSlice.ncdf').to_list()
                 
@@ -143,6 +161,20 @@ def build_da_sets(da_params, run_sets, t0):
                 
                 # Add available TimeSlices to da_sets list
                 da_sets[i]['usace_timeslice_files'] = filenames_usace
+
+            # identify available USACE TimeSlices in run set i
+            if usbr_timeslices_folder and usbr_da:
+                filenames_usbr = (timestamps.strftime('%Y-%m-%d_%H:%M:%S') 
+                            + '.15min.usbrTimeSlice.ncdf').to_list()
+                
+                # identify available USACE TimeSlices
+                filenames_usbr = _check_timeslice_exists(
+                    filenames_usbr, 
+                    usbr_timeslices_folder
+                )
+                
+                # Add available TimeSlices to da_sets list
+                da_sets[i]['usbr_timeslice_files'] = filenames_usbr
 
             # identify available USGS TimeSlices in run set i
             if canada_timeslices_folder and GreatLakes_da:

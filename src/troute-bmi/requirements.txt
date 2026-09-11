@@ -1,7 +1,7 @@
 pip>=22.1.0
-setuptools>=64.0,<69.0
+setuptools>=64.0,<82
 wheel
-numpy~=1.0
+numpy==1.26.4
 Cython>3,!=3.0.4
 pandas
 xarray
@@ -10,6 +10,7 @@ pyyaml
 toolz
 joblib
 deprecated
-pyarrow<12.0
+pyarrow
 geopandas
 bmipy>=2.0.0
+psutil

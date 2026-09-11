@@ -4,11 +4,13 @@ import yaml
 import time
 
 from troute.config import Config
-import nwm_routing.__main__ as tr
+import nwm_routing.nwm_route as tr
 
 from troute.network import bmi_array2df as a2df
 
-from troute_ewts import configure_logging
+import logging
+LOGGER_NAME = "TROUTE"
+LOG = logging.getLogger(LOGGER_NAME)
 
 class troute_model():
 
@@ -245,12 +247,16 @@ class troute_model():
                          self._network.dataframe,
                          self._network.q0,
                          self._network._qlateral,
+                         self._network._eloss,
+                         self._network.forcing_parameters.get("ssout"),
                          self._data_assimilation.usgs_df,
                          self._data_assimilation.lastobs_df,
                          self._data_assimilation.reservoir_usgs_df,
                          self._data_assimilation.reservoir_usgs_param_df,
                          self._data_assimilation.reservoir_usace_df,
                          self._data_assimilation.reservoir_usace_param_df,
+                         self._data_assimilation.reservoir_usbr_df,
+                         self._data_assimilation.reservoir_usbr_param_df,
                          self._data_assimilation.reservoir_rfc_df,
                          self._data_assimilation.reservoir_rfc_param_df,
                          self._data_assimilation.assimilation_parameters,
@@ -321,7 +327,7 @@ class troute_model():
         values['lastobs_df'] = lastobs_df.values.flatten()
         values['lastobs_df_index'] = lastobs_df.index
 
-        nudge = np.concatenate([r[8] for r in self._run_results])[:,1:]
+        nudge = np.concatenate([r[9] for r in self._run_results])[:,1:]   # Corresponds to the ordering of the outflows from line 843 troute/routing/fast_reach/mc_reach.pyx
         usgs_positions_id = np.concatenate([r[3][0] for r in self._run_results]).astype(int)
         self._nudge = pd.DataFrame(data=nudge, index=usgs_positions_id)
         values['nudging'] = self._nudge.values.flatten()
@@ -424,7 +430,7 @@ def _read_config_file(custom_input_file): #TODO: Update this function, I dont' t
         data = yaml.load(custom_file, Loader=yaml.SafeLoader)
 
     troute_configuration = Config(**data)
-    config_dict = troute_configuration.dict()
+    config_dict = troute_configuration.model_dump()
 
     log_parameters = config_dict.get('log_parameters')
     compute_parameters = config_dict.get('compute_parameters')
@@ -440,9 +446,6 @@ def _read_config_file(custom_input_file): #TODO: Update this function, I dont' t
     hybrid_parameters = compute_parameters.get('hybrid_parameters')
     parity_parameters = output_parameters.get('wrf_hydro_parity_check')
     data_assimilation_parameters = compute_parameters.get('data_assimilation_parameters')
-
-    # Configure NGWPC python logger (log_parameters not needed)
-    configure_logging()
 
     return (
         log_parameters,
@@ -500,9 +503,9 @@ def _retrieve_last_output(results, nts, waterbodies_df,):
     ).to_flat_index()
     
     wbdy = pd.concat(
-        [pd.DataFrame(r[6], index=r[0], columns=i_columns) for r in results],
+        [pd.DataFrame(r[7], index=r[0], columns=i_columns) for r in results],
         copy=False,
-    )
+    )  # Corresponds to the ordering of the outflows from line 843 troute/routing/fast_reach/mc_reach.pyx
     
     wbdy_id_list = waterbodies_df.index.values.tolist()
 
@@ -556,9 +559,9 @@ def _create_output_dataframes(results, nts, waterbodies_df,):
     ).to_flat_index()
     
     wbdy = pd.concat(
-        [pd.DataFrame(r[6], index=r[0], columns=i_columns) for r in results],
+        [pd.DataFrame(r[7], index=r[0], columns=i_columns) for r in results],
         copy=False,
-    )
+    )  # Corresponds to the ordering of the outflows from line 843 troute/routing/fast_reach/mc_reach.pyx
     
     wbdy_id_list = waterbodies_df.index.values.tolist()
     

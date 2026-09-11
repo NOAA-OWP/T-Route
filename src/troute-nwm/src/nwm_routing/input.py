@@ -7,9 +7,9 @@ import yaml
 import troute.nhd_io as nhd_io
 import troute.nhd_network_utilities_v02 as nnu
 from troute.config import Config
+from nwm_routing.log_level_set import log_level_set
 
-from troute_ewts import MODULE_NAME
-LOG = logging.getLogger(MODULE_NAME)
+LOG = logging.getLogger("TROUTE")
 
 def _input_handler_v04(args):
     '''
@@ -35,6 +35,7 @@ def _input_handler_v04(args):
     data_assimilation_parameters (dict): Input parameters re data assimilation
 
     '''
+    
     # get name of user configuration file (e.g. test.yaml)
     custom_input_file = args.custom_input_file
 
@@ -42,7 +43,7 @@ def _input_handler_v04(args):
         data = yaml.load(custom_file, Loader=yaml.SafeLoader)
     
     troute_configuration = Config.with_strict_mode(**data)
-    config_dict = troute_configuration.dict()
+    config_dict = troute_configuration.model_dump()
 
     log_parameters = config_dict.get('log_parameters')
     compute_parameters = config_dict.get('compute_parameters')
@@ -58,6 +59,9 @@ def _input_handler_v04(args):
     hybrid_parameters = compute_parameters.get('hybrid_parameters')
     parity_parameters = output_parameters.get('wrf_hydro_parity_check')
     data_assimilation_parameters = compute_parameters.get('data_assimilation_parameters')
+    
+    # configure python logger
+    log_level_set(log_parameters)
     
     return (
         log_parameters,
@@ -114,6 +118,18 @@ def _input_handler_v03(args):
         parity_parameters,
         data_assimilation_parameters,
     ) = nhd_io.read_config_file(custom_input_file)
+
+    # -V3 reads raw yaml, bypassing the Config-level guard; no -V3 driver
+    # constructs the scaling DA, so an enabled flag would silently run no-DA.
+    if ((data_assimilation_parameters or {}).get("streamflow_da") or {}).get(
+        "streamflow_scaling"
+    ):
+        raise ValueError(
+            "streamflow_da.streamflow_scaling is true, but the -V3 driver does not "
+            "implement the simple-scaling DA; the run would complete with NO "
+            "assimilation while looking successful. Use the -V5 (NHF) driver, or "
+            "disable streamflow_scaling."
+        )
 
     # if log level is at or below DEBUG, then check user inputs
     if LOG.isEnabledFor(logging.DEBUG):
@@ -531,6 +547,60 @@ def check_inputs(
                 'gage_lakeID_crosswalk_file',
                 reservoir_da['gage_lakeID_crosswalk_file']
             )
+
+    #-----------------------------------------------------------------
+    # Checking diversion data assimilation inputs
+    #-----------------------------------------------------------------
+    diversion_da = data_assimilation_parameters.get('diversion_da', None)
+    if diversion_da:
+        crosswalk = diversion_da.get('diversion_gage_crosswalk', None)
+        if crosswalk is None:
+            LOG.error(
+                'diversion_da is specified but diversion_gage_crosswalk is missing. '
+                'Provide a mapping of fp_id (int) to gage site_no (str).'
+            )
+            quit()
+        elif not isinstance(crosswalk, dict):
+            LOG.error(
+                'diversion_gage_crosswalk must be a mapping of fp_id to site_no, '
+                'but got %s. Expected a YAML mapping block.',
+                type(crosswalk).__name__
+            )
+            quit()
+        elif len(crosswalk) == 0:
+            LOG.error(
+                'diversion_gage_crosswalk is empty. '
+                'Provide at least one fp_id: site_no entry.'
+            )
+            quit()
+        else:
+            for fp_id, site_no in crosswalk.items():
+                if not isinstance(fp_id, int):
+                    LOG.error(
+                        'diversion_gage_crosswalk key %r is not an integer fp_id.',
+                        fp_id
+                    )
+                    quit()
+                if not isinstance(site_no, str):
+                    LOG.error(
+                        'diversion_gage_crosswalk value %r for fp_id %s is not a string site_no.',
+                        site_no, fp_id
+                    )
+                    quit()
+            LOG.debug(
+                'diversion_da configured with %d diversion(s).', len(crosswalk)
+            )
+        persist_historical_median = diversion_da.get('persist_historical_median', False)
+        if not isinstance(persist_historical_median, bool):
+            LOG.error(
+                'persist_historical_median must be a boolean (true/false), but got %s.',
+                type(persist_historical_median).__name__
+            )
+            quit()
+        LOG.debug('persist_historical_median = %s', persist_historical_median)
+    else:
+        LOG.debug('No diversion_da parameters provided. No flow diversions will be applied.')
+
     #-----------------------------------------------------------------
     # Checking output settings
     #----------------------------------------------------------------- 

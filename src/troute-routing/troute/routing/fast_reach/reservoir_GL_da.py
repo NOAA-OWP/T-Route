@@ -1,8 +1,7 @@
 import numpy as np
 from datetime import datetime, timedelta
 import logging
-from troute_ewts import MODULE_NAME
-LOG = logging.getLogger(MODULE_NAME)
+LOG = logging.getLogger("TROUTE")
 
 def great_lakes_da(
     gage_obs,

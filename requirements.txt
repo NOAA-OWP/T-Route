@@ -1,14 +1,25 @@
 pip>=22.1.0
-setuptools>=64.0,<69.0
+setuptools>=64,<82
 wheel
-numpy~=1.0
+numpy==1.26.4
 Cython>3,!=3.0.4
-pandas
-xarray
+pandas<3
+# Upper bound is deliberate. xarray was unbounded, an unrelated resolve moved it
+# from 2024.7 to 2026.7, and two of its breaking changes silently broke NWM
+# observation ingestion: queryTime's non CF units started raising on open, and
+# decode_timedelta stopped defaulting to True. t-route has to read NWM files as
+# they are actually written, so an unreviewed major jump is a real risk here.
+# Raise this bound deliberately, after checking the RFC and timeslice readers.
+xarray>=2024.7,<2027
+# Required by xr.open_mfdataset, which reads the netCDF lateral inflow forcing
+# (nhd_io.get_ql_from_wrf_hydro_mf) and merges BMI output. It was never declared,
+# so a clean environment raised "chunk manager 'dask' is not available" the first
+# time a run used netCDF forcing rather than CSV.
+dask
 netcdf4
 pyyaml
 toolz
 joblib
 deprecated
-pyarrow<12.0
+pyarrow
 geopandas

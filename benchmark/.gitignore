@@ -1,0 +1,19 @@
+# The benchmark dataset and outputs are large and machine-local.
+# Regenerate the dataset with `python benchmark/scripts/prep_ohio_data.py`.
+data/
+golden/
+results/
+.regress_golden/
+__pycache__/
+*.pyc
+# Local simple-scaling DA run artifacts (regenerate with compare_scaling_da.py)
+out*/
+golden*/
+_*.yaml
+figures/scaling_da_*.png
+# Transient run artifacts written by the analysis harnesses
+_*.txt
+figures/forecast_mode_*.csv
+figures/fc_*.csv
+# Stray per-run netCDF that lands next to the configs rather than in an output dir.
+troute_*.nc

@@ -1,5 +1,6 @@
 """Module for handling NWM data processing and NWPS integrations."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -7,16 +8,21 @@ import geopandas as gpd
 import lxml.etree
 import numpy as np
 import pandas as pd
+import polars as pl
 import xarray as xr
 import yaml
-from icefabric_tools import find_origin
 
 from troute_rnr import write
+from troute_rnr.gpkg import find_origin
+from troute_rnr.logging import log_function_debug
 from troute_rnr.schemas.nwps import ProcessedData, SiteData
 from troute_rnr.schemas.weather import Site
 from troute_rnr.settings import Settings
 
+log = logging.getLogger(__name__)
 
+
+@log_function_debug()
 def edit_yaml(original_file: Path, params: dict[str, str], restart_file: Path) -> Path:
     """A function to dynamically edit the T-Route config
 
@@ -38,8 +44,9 @@ def edit_yaml(original_file: Path, params: dict[str, str], restart_file: Path) -
     with open(original_file) as file:
         data = yaml.safe_load(file)
 
+    params["output_folder"]
     output_dir = params["output_folder"] / params["lid"]
-    output_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     data["network_topology_parameters"]["supernetwork_parameters"]["geo_file_path"] = str(
         params["geo_file_path"]
@@ -58,6 +65,7 @@ def edit_yaml(original_file: Path, params: dict[str, str], restart_file: Path) -
     return tmp_yaml
 
 
+@log_function_debug()
 def create_initial_start_file(params: dict[str, str], settings: Settings) -> Path:
     """Creating the initial start/restart files
 
@@ -104,7 +112,10 @@ def create_initial_start_file(params: dict[str, str], settings: Settings) -> Pat
     return restart_file
 
 
-def format_config(inputs: ProcessedData, settings: Settings) -> tuple[Path, Path]:
+@log_function_debug()
+def format_config(
+    inputs: ProcessedData, settings: Settings, layers: dict[str, pl.LazyFrame]
+) -> tuple[Path, Path]:
     """
     Create the configuration required for T-Route.
 
@@ -121,10 +132,9 @@ def format_config(inputs: ProcessedData, settings: Settings) -> tuple[Path, Path
         The path to the YAML config file and flow files directory
     """
     reach = inputs.reach
-    network = settings.catalog.load_table("hydrofabric.network")
-    hy_id = (
-        find_origin(network_table=network, identifier=reach.id, id_type="comid")["id"].values[0].split("-")[1]
-    )
+    network = layers["network"]
+
+    hy_id = find_origin(network_table=network, identifier=reach.id).split("-")[1]
     tmp_flow_files_path = settings.tmp_flow_files_path / inputs.lid
     tmp_flow_files_path.mkdir(exist_ok=True)
     write.write_flow_files(hy_id, reach, tmp_flow_files_path)
@@ -157,6 +167,7 @@ def format_config(inputs: ProcessedData, settings: Settings) -> tuple[Path, Path
     return yaml_file_path, tmp_flow_files_path
 
 
+@log_function_debug()
 def format_xml(product_text: str) -> list[Site]:
     """
     Format product text from HML into valid XML segments.
@@ -188,7 +199,10 @@ def format_xml(product_text: str) -> list[Site]:
     return sites
 
 
-def format_output_nc(site_data: SiteData, inputs: ProcessedData, yaml_file_path: Path) -> None:
+@log_function_debug()
+def format_output_nc(
+    site_data: SiteData, inputs: ProcessedData, yaml_file_path: Path, settings: Settings
+) -> None:
     """Formats the output .nc file to contain flood/RFC metadata
 
     Parameters
@@ -233,4 +247,15 @@ def format_output_nc(site_data: SiteData, inputs: ProcessedData, yaml_file_path:
     ds.attrs["state"] = site_data.state.abbreviation
     ds.attrs["name"] = site_data.name
 
-    ds.to_netcdf(full_output_path)
+    if settings.bucket_name is None:
+        ds.to_netcdf(full_output_path)
+    else:
+        import boto3
+
+        ds.to_netcdf(full_output_path)
+
+        s3_client = boto3.client("s3")
+
+        output_s3_key = f"{settings.troute_output_path}/{site_data.lid}/{output_file_name}"
+        s3_client.upload_file(Filename=str(full_output_path), Bucket=settings.bucket_name, Key=output_s3_key)
+        log.info(f"Wrote {output_file_name} to s3://{settings.bucket_name}/{output_s3_key}")

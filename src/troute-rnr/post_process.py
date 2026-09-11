@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import xarray as xr
-from icefabric_tools import table_to_geopandas
 from troute_rnr.settings import Settings
 
 
@@ -70,7 +69,7 @@ def post_process(settings: Settings) -> None:
 
     # Reading in the hydrofabric
     print("Reading the hydrofabric")
-    flowpaths = table_to_geopandas(settings.catalog.load_table("hydrofabric.flowpaths"))
+    flowpaths = pd.read_parquet(settings.data_dir / "parquet/flowpaths.parquet")
     flowpaths = flowpaths.set_index("id")
     write_file = False
 
@@ -81,7 +80,7 @@ def post_process(settings: Settings) -> None:
                 file_timestamp = extract_timestamp_from_filename(nc_file.name)
                 # Filter files created within the last 24 hours
                 if (
-                    file_timestamp and twenty_four_hours_ago <= file_timestamp <= current_time
+                    file_timestamp and file_timestamp >= twenty_four_hours_ago
                 ):  # Searches for files with timestamps within the past 24 hours
                     ds = xr.open_dataset(nc_file, engine="netcdf4")
                     write_file = True

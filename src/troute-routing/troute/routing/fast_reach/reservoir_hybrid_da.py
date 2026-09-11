@@ -1,7 +1,6 @@
 import numpy as np
 import logging
-from troute_ewts import MODULE_NAME
-LOG = logging.getLogger(MODULE_NAME)
+LOG = logging.getLogger("TROUTE")
 
 def _modify_for_projected_storage(
     inflow, 
