@@ -19,7 +19,7 @@ classifiers = [
   "Topic :: Utilities",
 ]
 dependencies = [
-  "pydantic~=2.11.9",
+  "pydantic~=2.12.0",
   "typing_extensions",
 ]
 description = "Modules for validating and programatically accessing troute configuration files."
