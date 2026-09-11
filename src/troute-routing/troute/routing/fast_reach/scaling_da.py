@@ -249,9 +249,13 @@ def _prepare_site_tree(
     -------
     GageTree or None
         The position-filled tree, or ``None`` to skip the site (unknown gage, no
-        usable observation/override, a ``gage_fp`` mismatch, or a tree segment
-        absent from ``q_model``). The mismatch and missing-segment cases are
-        logged as warnings.
+        usable observation/override, a ``gage_fp`` mismatch, or a tree segment or
+        pruned branch absent from ``q_model``). The mismatch and missing-segment
+        cases are logged as warnings.
+
+        Skipping the WHOLE site on a missing pruned branch is deliberate: that
+        branch's flow belongs in its confluence denominator, and without it the
+        surviving sibling takes a share Edge Case 1 leaves unallocated.
     """
     if site not in gage_to_fp:
         return None
@@ -270,7 +274,12 @@ def _prepare_site_tree(
     try:
         return tree.with_positions(fp_to_pos)
     except KeyError as e:
-        LOG.warning("Site %s: tree segment %s not in q_model columns; skipping", site, e)
+        LOG.warning(
+            "Site %s: tree segment or pruned branch %s not in q_model columns; "
+            "skipping the whole site",
+            site,
+            e,
+        )
         return None
 
 
@@ -287,6 +296,7 @@ def apply_scaling_da(
     dq_o_by_site: Mapping[str, NDArray[np.float64]] | None = None,
     lag_by_site: Mapping[str, tuple[NDArray[np.float64], NDArray[np.int64]]] | None = None,
     edge_decay: float = 1.0,
+    post_add: Mapping[int, NDArray[np.float64]] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Apply the simple-scaling DA correction to *q_model* using *q_obs*.
 
@@ -584,6 +594,15 @@ def apply_scaling_da(
 
     if skipped:
         LOG.warning("apply_scaling_da: skipped %d sites: %s", len(skipped), skipped[:5])
+
+    # Added BEFORE the clip, not by the caller afterwards. The caller restores the
+    # raw at-gage nudge that the smoothing removed; clipping first and restoring
+    # second turns any smoothed correction that drives the background below zero
+    # into a one-sided positive error at the gage, so the site no longer reproduces
+    # its own observation.
+    if post_add:
+        for col, vals in post_add.items():
+            q_corrected[:, col] += vals
 
     np.clip(q_corrected, 0.0, None, out=q_corrected)
 

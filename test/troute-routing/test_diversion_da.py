@@ -375,7 +375,7 @@ class TestDonorIsItsOwnReach:
     ``compute_reach_kernel`` routes a whole reach in one call, feeding each
     segment's outflow straight into the next as ``quc``; the diversion is
     subtracted afterwards, when the results are copied back out. A donor in the
-    middle of a reach therefore hands its downstream neighbours the undiverted
+    middle of a reach therefore hands its downstream neighbors the undiverted
     flow, and the water is only removed from the donor's own reported row. Worse,
     the next timestep is inconsistent rather than merely uncorrected: ``qup`` comes
     from the donor's reduced previous value while ``quc`` comes from its

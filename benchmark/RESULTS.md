@@ -706,6 +706,126 @@ docker run --rm \
   python /t-route/benchmark/scripts/plot_max_loop_size.py
 ```
 
+### 5b. Memory model: two terms, not one
+
+The "scaling caveat" above turns out to understate the problem.
+Peak RSS does **not** scale with `links x columns` alone, and
+fitting the Tier A sweep as though it does produces a
+per-element constant roughly 15x too high, which then predicts
+that a 24-column CONUS window needs 152 GB.
+
+Both domains were re-swept on one machine (macOS arm64, Apple
+silicon, `cpu_pool = 8`, 8 forcing columns total, main-process
+peak RSS via `wait4`/`ru_maxrss`) so the slopes are comparable:
+
+| Window (columns) | Ohio, 11,327 fp | CONUS, 1,102,154 fp |
+|---:|---:|---:|
+| 1 | 620.7 MB | 10,206.8 MB |
+| 2 | 733.9 MB | 11,087.4 MB |
+| 4 | 876.6 MB | 11,602.7 MB |
+| 8 | 1,027.9 MB | 13,292.0 MB |
+| **slope** | **55.5 MB/col** | **414.6 MB/col** |
+| implied single per-element constant | 409 B | 31 B |
+
+Ohio's 409 B here against the 432 B implied by the Linux Tier A
+sweep says the two machines agree; the old number was never
+wrong, it was just misattributed. Read as one per-element
+constant the two domains differ by **13x**. Solved as two terms
+they agree within 2%:
+
+```
+peak_rss(w) = baseline + w * (52 MB + 28 B * links * qts_subdivisions)
+```
+
+- The **per-column** term (~52 MB) is forcing I/O, frame
+  assembly and output. It does not scale with the domain, and it
+  is ~94% of Ohio's slope. That is why fitting a small domain
+  alone attributes it to the wrong variable.
+- The **per-element** term (~28 B) is close to the arrays as
+  declared: `flowveldepth` 4-wide float32 plus `upstream_array`
+  1-wide is 20 B. It is ~87% of CONUS's slope.
+
+Consequence for `max_loop_size: 0` (automatic): the BMI driver
+sizes its memory cap from this model, so a CONUS scaling run is
+no longer refused for want of memory it never needed.
+
+**With the DA on.** The cluster runs assimilate, so the same
+sweep was repeated with `streamflow_scaling: true` against the
+`usgs_timeslices` folders:
+
+| Window | Ohio DA on | CONUS DA on |
+|---:|---:|---:|
+| 1 | 786.5 MB | -- |
+| 2 | 970.1 MB | 14,901.7 MB |
+| 4 | 1,294.5 MB | 16,211.5 MB |
+| 8 | 1,678.3 MB | -- |
+| **slope** | **125.1 MB/col** | **654.9 MB/col** |
+
+Solved the same way, the DA adds **67.8 MB per forcing column
+and 13 B per link-timestep**. That is the opposite shape to what
+the code assumed: it modelled the DA as `+34 B/element` and
+nothing per column, missing the term that dominates and
+overstating the one that does not. On CONUS at `mls = 4` the
+per-element reading predicts 29 GB against the 16.2 GB the run
+actually used.
+
+Part of why the DA's domain-scaled cost stays modest is that it
+bounds itself: `_resolve_spread_chunk` caps the upstream-spread
+transient at `_SPREAD_CHUNK_BUDGET_ELEMS` (64 M float64, 512 MB)
+and chunks above it, bit-identically. Note the budget counts
+CONCATENATED TREE segments, not domain links: the CONUS run log
+reports 12,234,251 of them, so CONUS is over the budget at every
+window measured here (observed in the run log at `mls = 8`, and
+294 M and 587 M elements at `mls` 2 and 4). Where Ohio crosses it
+was not observed. So the per-element DA figure is the softest
+number here, and the reason is extrapolation: the windows this
+model actually serves (auto 24, span-widened 48+) sit past the
+threshold, where the transient stops growing.
+
+CONUS DA has only two points. `mls = 8` drove the measuring
+machine (32 GB) into swap with loky workers dying, so its peak
+would have measured the swap rather than the model, and it was
+discarded rather than reported. CONUS with the DA also costs
+1,261 s at `mls = 2` against 270 s without, a 4.7x wall cost
+that is worth knowing separately from the memory.
+
+Caveats, stated precisely because these constants gate a hard
+`MemoryError`:
+
+- **The 2% agreement is arithmetic, not validation.** Two domains
+  fit two unknowns exactly, so the model reproduces both slopes by
+  construction and cannot fail against them.
+- **Linearity in window size IS independently checked**, but not
+  as tightly as first written here. Four points each for Ohio (both
+  arms) and CONUS DA-off; worst residual 6.7% on Ohio off, 6.6% on
+  Ohio DA, 2.4% on CONUS off. Both Ohio arms over-predict at
+  `mls = 1` and under-predict at `mls = 4`, the same sub-linear
+  onset the section above records. CONUS DA has only two points, so
+  it has no residual at all.
+- **The DA sweep ran with `travel_time_lag` off.** The drivers turn
+  `return_courant` on only for the lag's trace, so no swept run
+  allocated a Courant block: the 13 B/element figure is lag-off
+  scaling. Courant and the lag's `[nt, N_seg]` trace stay declared
+  widths, and they land on the window the span makes widest.
+- **Both sweeps ran at `qts_subdivisions = 12`,** so the split of
+  the per-column term into qts-dependent and qts-independent parts
+  is unidentified.
+
+Proportionate summary: trusted for lag-off scaling at qts 12;
+adequate for capping and warning; thin for a hard refusal, and
+untested for lag-on and for `return_courant`. A third domain
+(VPU 01, ~180 k flowpaths) is the cheap way to buy the model its
+first degree of freedom.
+
+Reproduce with:
+
+```bash
+pixi r python benchmark/scripts/sweep_max_loop_size.py \
+  --config conus.yaml --forcing ../data/conus/channel_forcing_retro \
+  --start "2019-05-29 00:00:00" --nts 96 --cpu-pool 8 \
+  --sweep 1 2 4 8 --runs 1 --warmup 0 --label conus_mls_sweep
+```
+
 ### 6. `LD_PRELOAD=libjemalloc.so`
 
 We did not test `jemalloc` end-to-end on t-route. It is the

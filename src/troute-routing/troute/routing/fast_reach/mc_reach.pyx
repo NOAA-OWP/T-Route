@@ -360,11 +360,10 @@ cpdef object compute_network_structured(
             else:
                 # Check whether to use the fortran or python RFC DA module:
                 if from_files:
-                    # If reservoir_type is 1, 2, 3, or 7 then initialize Levelpool reservoir
-                    # reservoir_type 1 is a straight levelpool reservoir.
-                    # reservoir_types 2 and 3 are USGS and USACE Hybrid reservoirs, respectively.
-                    # reseroir_types 7 are USBR reservoirs
-                    if (reservoir_types[wbody_index][0] >= 1 and (reservoir_types[wbody_index][0] <= 3 or reservoir_types[wbody_index][0] == 7)):
+                    # Anything that is not RFC is a levelpool. The old test named
+                    # types 1-3 and 7 with no else, so type 6 (Great Lakes) and any
+                    # unexpected code appended no reach object at all.
+                    if (reservoir_types[wbody_index][0] != 4 and reservoir_types[wbody_index][0] != 5):
                                             
                         # Initialize levelpool reservoir object
                         lp_obj =  MC_Levelpool(
@@ -425,6 +424,15 @@ cpdef object compute_network_structured(
                 #tuple of MC_Reach and reach_type
                 MC_Reach(segment_objects, array('l',upstream_ids))
                 )
+
+    # One object per input reach. reach_has_gage is filled by position in
+    # reaches_wTypes but read by position in reach_objects, so a dropped reach
+    # misassigns streamflow DA for every reach after it.
+    if len(reach_objects) != len(reaches_wTypes):
+        raise ValueError(
+            f"built {len(reach_objects)} reach objects for {len(reaches_wTypes)} "
+            "reaches; a reach matched no branch of the reach/reservoir dispatch"
+        )
 
     # replace initial conditions with gage observations, wherever available
     cdef int gages_size = usgs_positions.shape[0]
@@ -553,7 +561,9 @@ cpdef object compute_network_structured(
     #create a memory view of the ndarray
     cdef float[:,:,::1] flowveldepth = flowveldepth_nd
     cdef float[:,:,::1] courant = courant_nd
-    cdef np.ndarray[float, ndim=3] upstream_array = np.empty((data_idx.shape[0], nsteps+1, 1), dtype='float32')
+    # zeros, not empty: only reservoir rows are written, so any other row reaches
+    # the LAKEOUT inflow column as uninitialized heap, varying run to run.
+    cdef np.ndarray[float, ndim=3] upstream_array = np.zeros((data_idx.shape[0], nsteps+1, 1), dtype='float32')
     cdef float reservoir_outflow, reservoir_water_elevation
     cdef int id = 0
     

@@ -29,9 +29,11 @@ cdef void chxsec_lookuptable(
                             double[:,:] out_z_adj,
 ):
 
+    # Zeroed, not np.empty: the Fortran visits mainstem reaches only, so
+    # anything else would be published as junk.
     cdef:
-        double[::1,:,:,:] xsec_tab = np.empty([11, nrow_chxsec_lookuptable, mxncomp_g, nrch_g], dtype = np.double, order = 'F')
-        double[::1,:]     z_adj    = np.empty([mxncomp_g, nrch_g], dtype = np.double, order = 'F')
+        double[::1,:,:,:] xsec_tab = np.zeros([11, nrow_chxsec_lookuptable, mxncomp_g, nrch_g], dtype = np.double, order = 'F')
+        double[::1,:]     z_adj    = np.zeros([mxncomp_g, nrch_g], dtype = np.double, order = 'F')
     
     c_chxsec_lookuptable_calc(
                             &mxncomp_g,

@@ -39,6 +39,7 @@ testpaths = ["test"]
 addopts = "--continue-on-collection-errors"
 markers = [
     "integration: end-to-end NHF model runs (require preprocessed data; run with -m integration)",
+    "endtoend: full nwm_routing CLI runs on the committed LowerColorado data (no external data needed)",
 ]
 filterwarnings = [
     # Third-party warnings, nothing in t-route can act on it.
@@ -77,6 +78,16 @@ lint.per-file-ignores."src/troute-nwm/src/nwm_routing/scaling_da_apply.py" = [
 lint.per-file-ignores."src/troute-network/troute/scaling_da/*.py" = [
   "C901",
   "TRY003", "EM101", "EM102",
+]
+lint.per-file-ignores."src/troute-network/troute/job_memory.py" = [
+  # `troute` is a namespace package shared by every distribution in src/; an
+  # __init__.py here would shadow troute.config, troute.routing and the rest.
+  "INP001",
+]
+lint.per-file-ignores."src/troute-network/troute/window_plan.py" = [
+  # `troute` is a namespace package shared by every distribution in src/; an
+  # __init__.py here would shadow troute.config, troute.routing and the rest.
+  "INP001",
 ]
 lint.per-file-ignores."src/troute-routing/troute/routing/fast_reach/scaling_da.py" = [
   "TRY003", "EM101", "EM102",
@@ -158,3 +169,10 @@ reportUnknownLambdaType = false
 reportUnknownMemberType = false
 reportUnknownParameterType = false
 reportUnknownVariableType = false
+
+[tool.fortitude]
+include = ["src/**/*.f90"]
+
+[tool.fortitude.check]
+ignore = ["S001", "S101", "S241", "MOD021", "S231", "C003", "C131"]
+line-length = 120

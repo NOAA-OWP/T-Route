@@ -6,16 +6,19 @@ the Muskingum-Cunge nudging override, carrying the correction DOWNSTREAM through
 routing. After routing, :meth:`ScalingDA.apply_in_kernel` reads the kernel-recorded
 innovation (``nudge``), reconstructs the gage background, and spreads the
 correction UPSTREAM (area-scaling along reaches, flow-ratio split at confluences).
-Stale-obs decay within a window follows ``da_decay_coefficient``; decay state is
-NOT carried across forcing windows.
+Stale-obs decay follows ``da_decay_coefficient`` and IS carried across forcing
+windows: ``DataAssimilation.update_after_compute`` harvests the kernel's lastobs for
+scaling runs, so a gage that falls silent keeps decaying rather than resetting at a
+boundary that ``max_loop_size`` happens to fall on. The frame rides in the BMI
+checkpoint, so the continuity spans cycles as well.
 
 Everything here is in ``up_node_id`` space, and the gage crosswalk comes from
 ``network.gages`` -- the same set the execution plan splits reaches at, so the
 injection always lands on a reach boundary.
 
 Observations come from the shared ``usgs_timeslices_folder`` through
-``nhd_io.get_obs_from_timeslices`` (same files, QC gate, and interpolation as
-nudging and reservoir persistence), or synthetically as ``synthetic_obs_factor``
+``nhd_io.get_obs_from_timeslices`` (same QC gate and interpolation as nudging and
+reservoir persistence, but over the run-spanning file list, not the per-window one), or synthetically as ``synthetic_obs_factor``
 times a frozen no-DA baseline.
 """
 
@@ -40,6 +43,7 @@ from troute.scaling_da import (
 from troute.scaling_da.preprocess import TIMESLICE_GLOB_SUFFIX as _TIMESLICE_GLOB_SUFFIX
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from collections.abc import Mapping, Sequence
 
     from numpy.typing import NDArray
@@ -53,6 +57,34 @@ if TYPE_CHECKING:
     RunResults = Sequence[RunResult]
 
 LOG = logging.getLogger("TROUTE")
+
+
+def span_da_runs(da_runs: "Iterable[Mapping[str, Any] | None]") -> dict | None:
+    """One TimeSlice list covering every window, from the per-window lists.
+
+    The reader's gap fill is non-local, so a per-window list makes the injected
+    observations depend on max_loop_size. Scaling only; nudging keeps its own.
+    """
+    seen: set[str] = set()
+    files: list[str] = []
+    first: Mapping[str, Any] | None = None
+    seen_keys: list[Mapping[str, Any] | None] = []
+    for da_run in da_runs:
+        if da_run is None:
+            continue
+        seen_keys.append(da_run)
+        first = first if first is not None else da_run
+        for f in da_run.get("usgs_timeslice_files", []):
+            if f not in seen:
+                seen.add(f)
+                files.append(f)
+    if first is None:
+        return None
+    spanning = dict(first)
+    # Absent stays absent, so _read_timeslices keeps its directory-glob fallback.
+    if any(d is not None and "usgs_timeslice_files" in d for d in seen_keys):
+        spanning["usgs_timeslice_files"] = sorted(files)
+    return spanning
 
 
 def merge_injected_obs(
@@ -924,8 +956,8 @@ class ScalingDA:
 
         ``get_obs_from_timeslices`` with an identity crosswalk gives site-keyed
         rows under the same QC and interpolation every other consumer uses. The
-        file list is ``build_da_sets``'s per-window list; a driver that never
-        built da_sets falls back to the whole directory.
+        drivers hand this the RUN-spanning union (see ``span_da_runs``); a driver
+        that never built da_sets falls back to the whole directory.
         """
         from troute import nhd_io
 
@@ -1104,12 +1136,26 @@ class ScalingDA:
         colpos = {int(c): i for i, c in enumerate(q_model.columns)}
         cand = {}  # site -> (seg, nudge) for gages with a non-zero applied delta
         halo_by_site: dict[str, NDArray[np.float64]] = {}
+        unresolvable: list[str] = []
+        mismatched: list[str] = []
         for site in self.trees:
             seg = self.gage_seg.get(site)
             if seg is None or seg not in nudge_by_seg or seg not in colpos:
                 continue
             nud = nudge_by_seg[seg]
             if nud.shape[0] != nt:
+                continue
+            # Every reason apply_scaling_da can refuse a site is settled here, before
+            # the nudge is subtracted: refused later, nothing adds it back and the gage
+            # is published with its own nudge removed.
+            if self.trees[site].gage_fp != seg:
+                mismatched.append(site)
+                continue
+            # Placed twice per window: apply_scaling_da rebuilds positions itself.
+            try:
+                self.trees[site].with_positions(colpos)
+            except KeyError:
+                unresolvable.append(site)
                 continue
             # NOTE: a site with an all-zero OWN innovation stays a candidate. Its
             # halo can still be nonzero, and the lag reads it at t inside THIS
@@ -1122,6 +1168,22 @@ class ScalingDA:
             # back to persistence.
             if halo is not None and seg in halo:
                 halo_by_site[site] = np.asarray(halo[seg], dtype=np.float64)
+        # Both skip only the UPSTREAM spread; the at-gage and downstream
+        # assimilation the kernel already applied still stand.
+        if unresolvable:
+            LOG.warning(
+                "scaling DA: in-kernel -- %d gage(s) have a tree segment or pruned "
+                "branch with no column in this window; upstream spread skipped: %s",
+                len(unresolvable),
+                unresolvable[:8],
+            )
+        if mismatched:
+            LOG.warning(
+                "scaling DA: in-kernel -- %d gage(s) have a tree root the crosswalk "
+                "disagrees with; upstream spread skipped every loop until fixed: %s",
+                len(mismatched),
+                mismatched[:8],
+            )
         if not cand:
             LOG.info("scaling DA: in-kernel -- no candidate gages this loop.")
             return
@@ -1241,10 +1303,9 @@ class ScalingDA:
                     qmb, None, gmap, trees,
                     min_flow_cms=self.min_flow, dq_o_by_site=dqo,
                     lag_by_site=lag, edge_decay=_edge,
+                    post_add={cp: d[c0:c1] for cp, d in obs_debt.items()},
                 )
                 corr = qc.to_numpy()  # [chunk_time, seg]
-                for cp, d in obs_debt.items():
-                    corr[:, cp] += d[c0:c1]
                 # Same write path as the unchunked call, so the correction lands
                 # in DEPTH as well as discharge on every chunk.
                 self._scatter_c0 = c0
@@ -1265,12 +1326,8 @@ class ScalingDA:
                 dq_o_by_site=dq_o_by_site,
                 lag_by_site=lag,
                 edge_decay=_edge,
+                post_add=obs_debt or None,
             )
-            if obs_debt:
-                cvals = q_corr.to_numpy(dtype=np.float64, copy=True)
-                for cp, d in obs_debt.items():
-                    cvals[:, cp] += d
-                q_corr = pd.DataFrame(cvals, index=q_corr.index, columns=q_corr.columns)
             self._scatter_back(run_results, q_corr)
         if seed_untimed and self.travel_time_lag and lag:
             # Rewrite the hand-off instant with the untimed spread: full
@@ -1292,10 +1349,9 @@ class ScalingDA:
                 min_flow_cms=self.min_flow,
                 dq_o_by_site={s: dq_o_by_site[s][nt - 1 : nt] for s in dq_o_by_site},
                 lag_by_site=lag0, edge_decay=_edge,
+                post_add={cp: d[nt - 1 : nt] for cp, d in obs_debt.items()},
             )
             last_vals = qc_last.to_numpy(dtype=np.float64, copy=True)
-            for cp, d in obs_debt.items():
-                last_vals[:, cp] += d[nt - 1 : nt]
             self._scatter_c0 = nt - 1
             self._scatter_back(
                 run_results,
@@ -1322,8 +1378,8 @@ class ScalingDA:
             np.mean(list(per_site.values())),
             time.perf_counter() - _t,
         )
-        # Per-site breakdown, so arms can be A/B'd on a matched site set.
-        # ponytail: capped at 50 sites -- readable on Ohio, CONUS has thousands.
+        # Per-site breakdown, so arms can be A/B'd on a matched site set. Capped at
+        # 50 sites: readable on Ohio, and CONUS has thousands.
         if len(per_site) <= 50:
             LOG.info(
                 "scaling DA: per-site |innovation| %s",

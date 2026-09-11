@@ -109,10 +109,20 @@ def assert_lakeout(
             f"got {ds.dims['feature_id']}"
         )
 
-    # Check for NaNs in numeric data variables.
+    # Check for non-finite or absurd values. Uninitialized heap reads as NaN, inf,
+    # or a huge finite float, so a NaN-only check missed most of it. Nothing
+    # physical reaches 1e12.
     for var in ("inflow", "outflow", "water_sfc_elev"):
-        if var in ds.data_vars and np.isnan(ds[var].values).any():
-            violations.append(f"NaN values found in '{var}'")
+        if var not in ds.data_vars:
+            continue
+        vals = ds[var].values
+        if not np.isfinite(vals).all():
+            violations.append(f"non-finite values found in '{var}'")
+        elif np.abs(vals).max(initial=0.0) > 1e12:
+            violations.append(
+                f"implausible magnitude in '{var}' "
+                f"(max |value| {np.abs(vals).max():.3e}); uninitialized memory?"
+            )
 
     # Check outflow bounds.
     if outflow_bounds and "outflow" in ds.data_vars and "feature_id" in ds.dims:

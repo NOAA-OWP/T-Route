@@ -5,6 +5,7 @@ import time
 import numpy as np
 import pandas as pd
 
+from .scaling_da_apply import span_da_runs
 from .flow_scaling_utils import append_nonrouting_to_run_results
 from .input import _input_handler_v04
 from .nwm_route import nwm_route
@@ -214,6 +215,17 @@ def nhf_routing(argv):
             fp_outlet_crosswalk=network.fp_outlet_crosswalk,
         )
 
+    # The scaling DA reads observations through an interpolating reader
+    # (limit_direction="both"), which is NON-LOCAL: the filled value at a timestamp
+    # depends on how much series was loaded. build_da_sets gives each window its own
+    # list starting at that window's t0 minus the lookback, so a window's injected
+    # observations, and the whole run's discharge, depend on max_loop_size (measured
+    # on VPU 01: 52.1 cms in the injected frame, 76.6 in the applied nudge, 76.6 in
+    # routed flow). The UNION over every window spans the run, so each window reads
+    # the same frame whatever the partition. Nudging and reservoir persistence keep
+    # their per-window lists; only the scaling injection reads this one.
+    scaling_da_run = span_da_runs(da_sets) if scaling_da is not None else None
+
     for run_set_iterator, run in enumerate(run_sets):
 
         t0 = run.get("t0")
@@ -229,12 +241,12 @@ def nhf_routing(argv):
         # through Muskingum-Cunge to the inter-gage reach. Re-injected every loop, since
         # DataAssimilation rebuilds the frame each time.
         if scaling_da is not None:
-            # da_sets[i] is the SAME per-window TimeSlice file list the nudging
-            # path consumes, so both read the identical files with the identical
-            # lookback padding.
+            # The run-spanning union, NOT da_sets[i]: the reader's gap fill is
+            # non-local, so a per-window list made the injected observations depend
+            # on max_loop_size. Nudging still consumes the per-window list.
             data_assimilation._usgs_df = merge_injected_obs(
                 scaling_da.build_usgs_df(
-                    t0, dt, nts, da_sets[run_set_iterator] if da_sets else None
+                    t0, dt, nts, scaling_da_run
                 ),
                 data_assimilation.usgs_df,
             )

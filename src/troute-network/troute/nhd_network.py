@@ -349,8 +349,11 @@ def split_at_gages_waterbodies_and_junctions(gage_nodes, waterbody_nodes, networ
     ''' 
     if (path[-1] in gage_nodes) | (node in gage_nodes):
         return False  # force a path split if coming from or going to a gage node
-    if (path[-1] in waterbody_nodes) ^ (node in waterbody_nodes):
-        return False  # force a path split if entering or exiting a waterbody
+    # Split at ANY waterbody, not just on entering or exiting one: mc_reach.pyx models
+    # only the first waterbody in a reach, so two adjacent lakes merged by the old XOR
+    # left the second one unrouted. Matches split_at_waterbodies_and_junctions.
+    if (path[-1] in waterbody_nodes) or (node in waterbody_nodes):
+        return False  # force a path split at any waterbody
     else:
         return len(network[node]) == 1
 

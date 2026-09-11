@@ -26,6 +26,13 @@ class Config(BaseModel):
     output_parameters: OutputParameters = Field(default_factory=OutputParameters)
     bmi_parameters: Optional[BMIParameters] = None
 
+    def model_dump(self, **kwargs) -> dict:
+        """Dump, with null data-assimilation sub-blocks normalized to dicts.
+
+        One choke point: doing it per call site left two entry points crashing.
+        """
+        return normalize_da_blocks(super().model_dump(**kwargs))
+
     # TODO: `reservoir_data_assimilation_parameters` missing from `v3_doc.yaml` and only included
     # test/BMI/bmi_reservoir_example.yaml
 
@@ -405,3 +412,28 @@ class Config(BaseModel):
             pass
 
         return values
+
+
+# An omitted sub-block comes back present-and-NULL, and consumers chain
+# `.get(block, {}).get(flag, ...)` through it, which dies on NoneType.
+# Afterwards every block is a dict with its flags absent, so nested reads answer
+# "configured off". Note reservoir_da is then TRUTHY: gate on the flags, not on it.
+_DA_BLOCKS = {
+    "streamflow_da": (),
+    "diversion_da": (),
+    "reservoir_da": ("reservoir_persistence_da", "reservoir_rfc_da"),
+}
+
+
+def normalize_da_blocks(config_dict: dict) -> dict:
+    """Replace null data-assimilation sub-blocks with empty dicts, in place."""
+    da = (config_dict.get("compute_parameters") or {}).get("data_assimilation_parameters")
+    if not isinstance(da, dict):
+        return config_dict
+    for block, nested in _DA_BLOCKS.items():
+        if da.get(block) is None:
+            da[block] = {}
+        for key in nested:
+            if isinstance(da[block], dict) and da[block].get(key) is None:
+                da[block][key] = {}
+    return config_dict

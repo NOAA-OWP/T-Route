@@ -39,6 +39,7 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
 
     integer :: iter
     integer :: maxiter, tries
+    logical :: converged, stalled
     real(prec) :: mindepth, aerror, rerror
     real(prec) :: R, twl, h_1, h, h_0, Qj, Qj_0
 
@@ -102,6 +103,17 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
         .or. qdp .gt. 0.0_prec .or. qdc .gt. 0.0_prec) then  !only solve if there's water to flux
 110 continue
 
+        !* Qj_0 = 0 is the reference's (MUSKINGCUNGE.f90 label 110), lost in the
+        !* port; interval 1 forms X from it on the first pass. The rest are here
+        !* so every intent(inout) actual is defined before its first use.
+        stalled = .false.
+        Qj_0 = 0.0_prec
+        Qj   = 0.0_prec
+        C1   = 0.0_prec
+        C2   = 0.0_prec
+        C3   = 0.0_prec
+        C4   = 0.0_prec
+
         !Uncomment next two lines for old initialization
         !WPC = 0.0_prec
         !AREAC = 0.0_prec
@@ -126,14 +138,19 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
                 sqrt_s0, sqrt_1pz2, sqrt_s0_over_n, sqrt_s0_over_ncc, &
                 two_sqrt_1pz2, bw_plus_2bfdz)
 
+            !* Neither branch may set h_1 = h: a zero step reads as convergence
+            !* below, which publishes the iterate as if it were a root.
             if(Qj_0-Qj .ne. 0.0_prec) then
                 h_1 = h - ((Qj * (h_0 - h))/(Qj_0 - Qj)) !update h, 3rd estimate
 
+                !* Negative step means the root is below the bracket, so halve
+                !* towards zero; expanding h upwards moved away from it.
                 if(h_1 .lt. 0.0_prec) then
-                    h_1 = h
+                    h_1 = 0.5_prec * h
                 endif
             else
-                h_1 = h
+                h_1 = h            !* degenerate slope; repeating it reproduces it
+                stalled = .true.
             endif
 
             if(h .gt. 0.0_prec) then
@@ -152,10 +169,18 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
             if( h .lt. mindepth) then  ! exit loop if depth is very small
                 goto 111
             endif
+            if( stalled ) then
+                goto 111
+            endif
         end do !*do while (rerror .gt. 0.01 .and. ....
 111    continue
 
-        if(iter .ge. maxiter) then
+        !* iter alone is not failure: the loop can meet its tolerance on the
+        !* same pass that takes iter to maxiter. A stall is never convergence.
+        converged = (.not. stalled) .and. &
+            ((rerror .le. 0.01_prec) .or. (aerror .lt. mindepth))
+
+        if(.not. converged .and. (stalled .or. iter .ge. maxiter)) then
             tries = tries + 1
 
             if(tries .le. 4) then  ! expand the search space
@@ -164,6 +189,19 @@ subroutine muskingcungenwm(dt, qup, quc, qdp, ql, dx, bw, tw, twcc,&
                 maxiter = maxiter + 25 !and increase the number of allowable iterations
                 goto 110
             endif
+
+            !* Search abandoned. Publishing h returns it as next step's depthp,
+            !* re-seeding the same failing search, so hold the previous depth.
+            !* Both intervals, in order: interval 2 forms X from interval 1's C1..C4.
+            h = max(depthp, mindepth)
+            call secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
+                qdp, ql, qup, quc, h, 1, Qj_0, C1, C2, C3, C4, X, &
+                sqrt_s0, sqrt_1pz2, sqrt_s0_over_n, sqrt_s0_over_ncc, &
+                two_sqrt_1pz2, bw_plus_2bfdz)
+            call secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
+                qdp, ql, qup, quc, h, 2, Qj, C1, C2, C3, C4, X, &
+                sqrt_s0, sqrt_1pz2, sqrt_s0_over_n, sqrt_s0_over_ncc, &
+                two_sqrt_1pz2, bw_plus_2bfdz)
                     !print*, "Musk Cunge WARNING: Failure to converge"
                     !print*, 'RouteLink index:', idx + linkls_s(my_id+1) - 1
                     !print*, "id,err,iters,tries",PC*ncc))/(WP+WPC))) * &
@@ -249,7 +287,12 @@ subroutine secant2_h(z, bw, bfd, twcc, s0, n, ncc, dt, dx, &
     ! constant across the Secant iteration; pre-computed by the caller.
     real(prec), intent(in) :: sqrt_s0_over_n, sqrt_s0_over_ncc
     real(prec), intent(in) :: two_sqrt_1pz2, bw_plus_2bfdz
-    real(prec), intent(out) :: Qj, C1, C2, C3, C4, X
+    !* NOT intent(out): interval 1 reads Qj, and interval 2 reads C1..C4, before
+    !* assigning them. Declaring them intent(out) let the compiler treat the
+    !* caller's stores as dead and delete them, so the reads picked up whatever
+    !* the stack held and the published depth depended on call order.
+    real(prec), intent(inout) :: Qj, C1, C2, C3, C4
+    real(prec), intent(out) :: X
     integer,    intent(in) :: interval
 
     real(prec) :: twl, AREA, WP, R, r_23, s3
@@ -459,6 +502,14 @@ subroutine hydraulic_geometry(h, bfd, bw, twcc, z, sqrt_1pz2, &
         R_loc       = AREA_loc / WP_loc
     else
         ! Floodplain (compound channel) case.
+        !* KNOWN LIMITATION, inherited from NWM (MUSKINGCUNGE.f90) and deliberately
+        !* not changed here: WPC below carries the whole floodplain top width at zero
+        !* floodplain area, so one composite R makes discharge DROP 77.3% as depth
+        !* crosses bankfull, which is a constant of the NHF parameterization
+        !* (ncc/n = 2, twcc/tw = 3 for all 1.1M CONUS flowpaths). The normal-flow
+        !* curve is therefore non-monotone and the depth solve ill-posed near
+        !* bankfull. Fixing it means summing conveyance per subsection, which
+        !* diverges from the reference model.
         h_gt_bf_loc = h - bfd
         h_lt_bf_loc = bfd
         AREA_loc    = (bw + bfd * z) * bfd

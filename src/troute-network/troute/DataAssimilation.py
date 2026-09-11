@@ -278,7 +278,12 @@ class NudgingDA(AbstractDA):
         streamflow_da_parameters = self._data_assimilation_parameters.get('streamflow_da', None)
 
         if streamflow_da_parameters:
-            if streamflow_da_parameters.get('streamflow_nudging', False):
+            # Scaling drives the same override, so the kernel records the same
+            # tuple. Harvesting it carries stale-obs decay across a window boundary.
+            if (
+                streamflow_da_parameters.get('streamflow_nudging', False)
+                or streamflow_da_parameters.get('streamflow_scaling', False)
+            ):
                 self._last_obs_df = new_lastobs(run_results, time_increment)
 
     def update_for_next_loop(self, network, da_run,):

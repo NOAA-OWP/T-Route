@@ -857,6 +857,9 @@ contains
         
         q_ev_g = 0.0
         elv_ev_g = 0.0
+        !* depth was left on the refactored grid while q and elv were remapped, so
+        !* the published depth belonged to a different node than the flow beside it.
+        depth_ev_g = 0.0
 
         do ts=1, ntss_ev_g
           used_lfrac = 0.0
@@ -899,18 +902,22 @@ contains
                  ! linear interpolation by depth
                  elv_ev_g(ts, oi, oj)   = intcD + slopeD*dst_top + z_thalweg_g(oi, oj)
                  elv_ev_g(ts, oi+1, oj) = intcD + slopeD*dst_btm + z_thalweg_g(oi+1, oj)
+                 depth_ev_g(ts, oi, oj)   = intcD + slopeD*dst_top
+                 depth_ev_g(ts, oi+1, oj) = intcD + slopeD*dst_btm
               else if ((used_lfrac(oi, oj) < equiv_one).and.(flag_lfrac(oi, oj) == 1)) then
                  q_ev_g(ts, oi, oj)   = intcQ + slopeQ*dst_top
                  ! linear interpolation by elevation
                  !elv_ev_g(ts, oi, oj) = intcE + slopeE*dst_top
                  ! linear interpolation by depth
                  elv_ev_g(ts, oi, oj) = intcD + slopeD*dst_top + z_thalweg_g(oi, oj)
+                 depth_ev_g(ts, oi, oj) = intcD + slopeD*dst_top
               else if ((used_lfrac(oi, oj) >= equiv_one).and.(flag_lfrac(oi, oj) >= 1)) then
                  q_ev_g(ts, oi+1, oj)   = intcQ + slopeQ*dst_btm
                  ! linear interpolation by elevation
                  !elv_ev_g(ts, oi+1, oj) = intcE + slopeE*dst_btm   
                  ! linear interpolation by depth
                  elv_ev_g(ts, oi+1, oj) = intcD + slopeD*dst_btm + z_thalweg_g(oi+1, oj)
+                 depth_ev_g(ts, oi+1, oj) = intcD + slopeD*dst_btm
                  flag_lfrac(oi, oj)     = 0
               endif
             end do

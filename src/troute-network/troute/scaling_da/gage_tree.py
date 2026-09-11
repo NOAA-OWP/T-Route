@@ -16,14 +16,11 @@ proof-of-concept's Ohio loader.
 
 from __future__ import annotations
 
-import logging
 from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
-
-LOG = logging.getLogger("TROUTE")
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -95,9 +92,8 @@ class GageTree:
     pruned_segs: NDArray[np.int64] = field(default_factory=lambda: np.empty(0, dtype=np.int64))
     pruned_positions: NDArray[np.int64] = field(
         default_factory=lambda: np.empty(0, dtype=np.int64))
-    # Positions carry their OWN pointer: a stop segment can be absent from the flow frame
-    # (a waterbody interior outside the routed columns), so the position CSR can be shorter
-    # than the segment CSR and the two must not share an index.
+    # Always equal to ``pruned_ptr`` now that ``with_positions`` raises rather than
+    # emit a short position CSR. Kept separate because the compiled kernel reads it.
     pruned_pos_ptr: NDArray[np.int64] = field(
         default_factory=lambda: np.empty(0, dtype=np.int64))
 
@@ -114,7 +110,8 @@ class GageTree:
         fp_to_position : Mapping[int, int]
             Mapping ``fp_id -> column position`` in the global modeled-flow frame
             (e.g. ``{fp: i for i, fp in enumerate(q_model.columns)}``). Every
-            segment in ``seg_order`` must be present.
+            segment in ``seg_order`` must be present, and so must every branch in
+            ``pruned_segs``: both are read out of the flow frame at runtime.
 
         Returns
         -------
@@ -125,35 +122,25 @@ class GageTree:
         Raises
         ------
         KeyError
-            If a segment in ``seg_order`` is absent from ``fp_to_position``.
+            If a segment in ``seg_order`` or a branch in ``pruned_segs`` is absent
+            from ``fp_to_position``. Callers drop the whole tree on this.
         """
         positions = np.fromiter(
             (fp_to_position[int(fp)] for fp in self.seg_order),
             dtype=np.int64,
             count=self.n_segments,
         )
-        # A pruned branch absent from the flow frame is dropped, LOUDLY: its
-        # flow then leaves the confluence denominator and surviving siblings
-        # inherit a share Edge Case 1 says must stay unallocated.
-        ptr, cols, dropped = self.pruned_ptr, [], []
+        # Fails closed like a missing tree member: dropping it leaves the
+        # confluence denominator short and a sibling takes its share.
+        ptr, cols = self.pruned_ptr, []
         new_ptr = np.zeros(self.n_segments + 1, dtype=np.int64)
         if ptr.size == self.n_segments + 1:
             for i in range(self.n_segments):
-                for k in range(int(ptr[i]), int(ptr[i + 1])):
-                    pos = fp_to_position.get(int(self.pruned_segs[k]))
-                    if pos is not None:
-                        cols.append(int(pos))
-                    else:
-                        dropped.append(int(self.pruned_segs[k]))
+                cols.extend(
+                    int(fp_to_position[int(seg)])
+                    for seg in self.pruned_segs[int(ptr[i]) : int(ptr[i + 1])]
+                )
                 new_ptr[i + 1] = len(cols)
-        if dropped:
-            LOG.warning(
-                "gage tree %s: %d pruned branch segment(s) absent from the routed "
-                "flow frame (%s); their flow cannot enter the confluence "
-                "denominator, so surviving siblings at those junctions receive a "
-                "LARGER share than Edge Case 1 intends.",
-                self.gage_fp, len(dropped), dropped[:5],
-            )
         return GageTree(
             gage_fp=self.gage_fp,
             gage_area_sqkm=self.gage_area_sqkm,

@@ -56,9 +56,39 @@ class _ScalingDAStub:
         self.restored_with = (ckpt, dt)
 
 
-def _make_model(time, subnetwork):
+def _da_config(**enabled):
+    """A config switching the named reservoir DA types on. Default: all of them.
+
+    ``_restore_da_frame`` now asks the run's own config which types it assimilates,
+    so a stub with no config would report every type OFF and the frames would never
+    be restored. These tests are about runs that DO use them.
+    """
+    flags = {"usgs": True, "usace": True, "usbr": True, "rfc": True, "gl": True,
+             "nudging": True}
+    flags.update(enabled)
+    return {
+        "compute_parameters": {
+            "data_assimilation_parameters": {
+                # lastobs belongs to the streamflow arms, and is dropped when both are off.
+                "streamflow_da": {"streamflow_nudging": flags["nudging"]},
+                "reservoir_da": {
+                    "reservoir_persistence_da": {
+                        "reservoir_persistence_usgs": flags["usgs"],
+                        "reservoir_persistence_usace": flags["usace"],
+                        "reservoir_persistence_usbr": flags["usbr"],
+                        "reservoir_persistence_greatLake": flags["gl"],
+                    },
+                    "reservoir_rfc_da": {"reservoir_rfc_forecasts": flags["rfc"]},
+                }
+            }
+        }
+    }
+
+
+def _make_model(time, subnetwork, **enabled):
     model = Model.__new__(Model)  # skip __init__ (no config/network build)
     model._time = time
+    model._config = _da_config(**enabled)
     model._network = _NetworkStub()
     model._data_assimilation = _DataAssimilationStub()
     model._subnetwork = subnetwork
@@ -322,3 +352,394 @@ def test_cycling_warmstate_never_accumulates_the_correction():
     assert net._q0.loc[101, "qd0"] == pytest.approx(6.0, rel=1e-6)
     # ...while the hand-off warmstate carries it.
     assert seeded.loc[101, "qd0"] == pytest.approx(6.0 + 2.0 * (20.0 / 30.0) ** 0.77, rel=1e-5)
+
+
+def test_load_state_does_not_erase_live_reservoir_da_params():
+    """A state written with a DA type OFF must not blank a run that has it ON.
+
+    That combination is a legitimate handoff -- warm up without assimilation, then
+    forecast with it -- but installing the saved empty frame left the observation
+    frame populated and its parameters missing, and the run died on
+    ``KeyError: 'totalCounts'`` inside _prep_reservoir_da_dataframes.
+    """
+    model = _make_model(0.0, _ExecutionPlanLike())
+    live_rfc = model._data_assimilation._reservoir_rfc_param_df
+    assert not live_rfc.empty
+
+    # A checkpoint from a run with every reservoir DA type off.
+    no_da_state = {
+        "time": 0.0,
+        "q0": pd.DataFrame({"q": [1.0, 2.0]}),
+        "seeded_q0": None,
+        "t0": "2020-01-01_00:00:00",
+        "last_obs": pd.DataFrame(),
+        "usgs": pd.DataFrame(),
+        "usace": pd.DataFrame(),
+        "usbr": pd.DataFrame(),
+        "rfc": pd.DataFrame(),
+        "gl": pd.DataFrame(),
+        "scaling_tau": None,
+    }
+    model.load_state(no_da_state)
+
+    da = model._data_assimilation
+    for label, frame in [
+        # An empty lastobs frame drops streamflow DA to open loop on any window
+        # with no observations, so it is the same hazard as the reservoir frames.
+        ("last observations", da._last_obs_df),
+        ("USGS", da._reservoir_usgs_param_df),
+        ("USACE", da._reservoir_usace_param_df),
+        ("USBR", da._reservoir_usbr_param_df),
+        ("RFC", da._reservoir_rfc_param_df),
+        ("Great Lakes", da._great_lakes_param_df),
+    ]:
+        assert not frame.empty, f"{label} parameters erased by a no-DA state file"
+    pd.testing.assert_frame_equal(da._reservoir_rfc_param_df, live_rfc)
+
+
+def test_load_state_still_installs_real_reservoir_da_params():
+    """The guard must not block the ordinary case: a populated saved frame wins."""
+    model = _make_model(0.0, _ExecutionPlanLike())
+    saved_rfc = pd.DataFrame({"totalCounts": [99]})
+    state = {
+        "time": 0.0,
+        "q0": pd.DataFrame({"q": [1.0, 2.0]}),
+        "seeded_q0": None,
+        "t0": "2020-01-01_00:00:00",
+        "last_obs": pd.DataFrame(),
+        "usgs": pd.DataFrame({"a": [11]}),
+        "usace": pd.DataFrame({"b": [22]}),
+        "usbr": pd.DataFrame({"e": [77]}),
+        "rfc": saved_rfc,
+        "gl": pd.DataFrame({"d": [44]}),
+        "scaling_tau": None,
+    }
+    model.load_state(state)
+    pd.testing.assert_frame_equal(
+        model._data_assimilation._reservoir_rfc_param_df, saved_rfc
+    )
+
+
+def test_load_state_rejects_a_no_da_checkpoint_after_routing():
+    """Keeping live DA state is only right while it still describes the checkpoint.
+
+    Re-deserializing into a model that has already routed would otherwise rewind
+    time and q0 while retaining DA state that has moved past it, so a retry would
+    not reproduce the first attempt.
+    """
+    model = _make_model(3600.0, _ExecutionPlanLike())
+    model._has_routed = True
+    no_da_state = {
+        "time": 0.0,
+        "q0": pd.DataFrame({"q": [1.0, 2.0]}),
+        "seeded_q0": None,
+        "t0": "2020-01-01_00:00:00",
+        "last_obs": pd.DataFrame(),
+        "usgs": pd.DataFrame(),
+        "usace": pd.DataFrame(),
+        "usbr": pd.DataFrame(),
+        "rfc": pd.DataFrame(),
+        "gl": pd.DataFrame(),
+        "scaling_tau": None,
+    }
+    with pytest.raises(ValueError, match="already routed"):
+        model.load_state(no_da_state)
+
+
+def test_load_state_into_a_fresh_model_is_still_allowed():
+    """The workflow this exists for: warm up with DA off, forecast with it on."""
+    model = _make_model(0.0, _ExecutionPlanLike())
+    live_rfc = model._data_assimilation._reservoir_rfc_param_df
+    model.load_state({
+        "time": 0.0,
+        "q0": pd.DataFrame({"q": [1.0, 2.0]}),
+        "seeded_q0": None,
+        "t0": "2020-01-01_00:00:00",
+        "last_obs": pd.DataFrame(),
+        "usgs": pd.DataFrame(),
+        "usace": pd.DataFrame(),
+        "usbr": pd.DataFrame(),
+        "rfc": pd.DataFrame(),
+        "gl": pd.DataFrame(),
+        "scaling_tau": None,
+    })
+    pd.testing.assert_frame_equal(
+        model._data_assimilation._reservoir_rfc_param_df, live_rfc
+    )
+
+
+def _no_da_state():
+    return {
+        "time": 21600.0,  # a warm-up checkpoint is never at t=0
+        "q0": pd.DataFrame({"q": [1.0, 2.0]}),
+        "seeded_q0": None,
+        "t0": "2020-01-01_00:00:00",
+        "last_obs": pd.DataFrame(),
+        "usgs": pd.DataFrame(),
+        "usace": pd.DataFrame(),
+        "usbr": pd.DataFrame(),
+        "rfc": pd.DataFrame(),
+        "gl": pd.DataFrame(),
+        "scaling_tau": None,
+    }
+
+
+def test_reloading_the_same_checkpoint_without_routing_is_allowed():
+    """A harness that deserializes twice must not be told the model has routed.
+
+    load_state installs the checkpoint's own nonzero time, so keying "has this
+    model advanced" off self._time made the second identical load raise.
+    """
+    model = _make_model(0.0, _ExecutionPlanLike())
+    live_rfc = model._data_assimilation._reservoir_rfc_param_df
+    model.load_state(_no_da_state())
+    model.load_state(_no_da_state())  # nothing routed in between
+    pd.testing.assert_frame_equal(
+        model._data_assimilation._reservoir_rfc_param_df, live_rfc
+    )
+
+
+def test_reset_time_does_not_disguise_a_routed_model():
+    """reset_time zeroes the clock without rewinding DA state, so it must not make
+    an advanced model look fresh to the next restore."""
+    model = _make_model(3600.0, _ExecutionPlanLike())
+    model._has_routed = True
+    model._orig_t0 = "2020-01-01_00:00:00"
+    model.reset_time()
+    with pytest.raises(ValueError, match="already routed"):
+        model.load_state(_no_da_state())
+
+
+def _state_from(model):
+    """What ``model`` would serialize, round-tripped through pickle like the BMI does."""
+    return pickle.loads(pickle.dumps(model.create_state(), pickle.HIGHEST_PROTOCOL))
+
+
+def test_a_disabled_run_does_not_launder_stale_reservoir_params():
+    """RFC on -> off -> on must not carry the first run's parameters to the third.
+
+    Emptiness cannot say whether a type is switched on: an enabled type with no
+    observations yet is empty too. So a run with RFC DA OFF used to install the
+    checkpoint's populated frame over its own empty one, never update it (it runs no
+    RFC DA), and re-serialize it as if it had. The next run to switch RFC back on
+    then inherited `file`, `timeseries_idx` and `update_time` values stale by however
+    long RFC stayed off, and preferred them over the ones it had just built.
+    """
+    # Run A: RFC on, and it has assimilated.
+    run_a = _make_model(3600.0, _ExecutionPlanLike())
+    run_a._data_assimilation._reservoir_rfc_param_df = pd.DataFrame(
+        {"totalCounts": [12], "timeseries_idx": [7], "update_time": [3600]}
+    )
+    state_a = _state_from(run_a)
+
+    # Run B: RFC off. It must keep its own empty frame, not adopt A's.
+    run_b = _make_model(0.0, _ExecutionPlanLike(), rfc=False)
+    run_b._data_assimilation._reservoir_rfc_param_df = pd.DataFrame()
+    run_b.load_state(state_a)
+    assert run_b._data_assimilation._reservoir_rfc_param_df.empty, (
+        "a run with RFC DA off adopted the checkpoint's RFC parameters"
+    )
+
+    # ...so what B writes carries no RFC state to launder.
+    state_b = _state_from(run_b)
+    assert state_b["rfc"].empty
+    assert state_b["reservoir_da_enabled"]["rfc"] is False
+
+    # Run C: RFC on again. It keeps the parameters it built rather than A's stale ones.
+    run_c = _make_model(0.0, _ExecutionPlanLike())
+    fresh = pd.DataFrame({"totalCounts": [3], "timeseries_idx": [0], "update_time": [0]})
+    run_c._data_assimilation._reservoir_rfc_param_df = fresh
+    run_c.load_state(state_b)
+    pd.testing.assert_frame_equal(
+        run_c._data_assimilation._reservoir_rfc_param_df, fresh
+    )
+
+
+def test_an_enabled_run_with_no_observations_yet_still_takes_the_checkpoint():
+    """The symmetric case: empty live does NOT mean the type is off.
+
+    A run with RFC DA on that has not seen an observation in this window has an empty
+    live frame and legitimately needs the checkpoint's persistence. Distinguishing it
+    from the disabled run above is exactly what the recorded flags are for.
+    """
+    run_a = _make_model(3600.0, _ExecutionPlanLike())
+    saved = pd.DataFrame({"totalCounts": [12], "update_time": [3600]})
+    run_a._data_assimilation._reservoir_rfc_param_df = saved
+    state = _state_from(run_a)
+    assert state["reservoir_da_enabled"]["rfc"] is True
+
+    run_b = _make_model(0.0, _ExecutionPlanLike())  # RFC on
+    run_b._data_assimilation._reservoir_rfc_param_df = pd.DataFrame()  # nothing yet
+    run_b.load_state(state)
+    pd.testing.assert_frame_equal(
+        run_b._data_assimilation._reservoir_rfc_param_df, saved
+    )
+
+
+def test_switching_a_type_on_mid_cycle_works_on_a_fresh_model():
+    """The workflow the recorded flags exist for: cycle N runs RFC off, cycle N+1
+    runs it on. ngen builds a model per cycle, so the restoring model is fresh and
+    the checkpoint's deliberate emptiness costs it nothing."""
+    off = _make_model(0.0, _ExecutionPlanLike(), rfc=False)
+    off._data_assimilation._reservoir_rfc_param_df = pd.DataFrame()
+    state = _state_from(off)
+    assert state["reservoir_da_enabled"]["rfc"] is False
+
+    fresh = _make_model(0.0, _ExecutionPlanLike())  # RFC on, nothing routed
+    live = fresh._data_assimilation._reservoir_rfc_param_df
+    fresh.load_state(state)  # must not raise
+    pd.testing.assert_frame_equal(
+        fresh._data_assimilation._reservoir_rfc_param_df, live
+    )
+
+
+def test_a_routed_model_still_refuses_a_checkpoint_with_no_frame():
+    """A model that HAS routed would keep state the restored time does not describe,
+    and the kernel reads update_time and timeseries_idx straight out of it. That the
+    checkpoint recorded the type as off does not make the live frame any fresher."""
+    off = _make_model(0.0, _ExecutionPlanLike(), rfc=False)
+    off._data_assimilation._reservoir_rfc_param_df = pd.DataFrame()
+    state = _state_from(off)
+
+    routed = _make_model(3600.0, _ExecutionPlanLike())  # RFC on
+    routed._has_routed = True
+    with pytest.raises(ValueError, match="already routed"):
+        routed.load_state(state)
+
+
+def test_a_rejected_load_leaves_the_model_untouched():
+    """A refused restore must not half-apply.
+
+    load_state used to rewind the clock and clear _has_routed before any restore
+    guard ran, so the first attempt raised, the model was left half-loaded, and an
+    identical retry accepted exactly what had just been refused.
+    """
+    routed = _make_model(3600.0, _ExecutionPlanLike())
+    routed._has_routed = True
+    before_time = routed._time
+    before_rfc = routed._data_assimilation._reservoir_rfc_param_df.copy()
+    legacy = _no_da_state()
+    legacy.pop("reservoir_da_enabled", None)
+
+    for attempt in (1, 2):
+        with pytest.raises(ValueError, match="already routed"):
+            routed.load_state(legacy)
+        assert routed._has_routed is True, f"attempt {attempt} cleared _has_routed"
+        assert routed._time == before_time, f"attempt {attempt} moved the clock"
+        pd.testing.assert_frame_equal(
+            routed._data_assimilation._reservoir_rfc_param_df, before_rfc
+        )
+
+
+def test_a_legacy_checkpoint_still_rejects_a_routed_model():
+    """Without the flags there is no way to tell deliberate from stale, so reject.
+
+    Checkpoints written before the flags were recorded keep the old behavior.
+    """
+    routed = _make_model(3600.0, _ExecutionPlanLike())
+    routed._has_routed = True
+    legacy = _no_da_state()
+    legacy.pop("reservoir_da_enabled", None)
+    with pytest.raises(ValueError, match="already routed"):
+        routed.load_state(legacy)
+
+
+def test_a_nudging_off_run_does_not_launder_a_stale_lastobs():
+    """lastobs launders exactly as the reservoir frames did.
+
+    time_since_lastobs is a RELATIVE offset, so a nudging-off run that adopted the
+    checkpoint's frame, never refreshed it, and re-serialized it as its own would
+    hand the next nudging-on run day-old observations as if they were current.
+    """
+    on = _make_model(3600.0, _ExecutionPlanLike())
+    on._data_assimilation._last_obs_df = pd.DataFrame({"discharge": [42.0]})
+    state = _state_from(on)
+
+    off = _make_model(0.0, _ExecutionPlanLike(), nudging=False)
+    off._data_assimilation._last_obs_df = pd.DataFrame()
+    off.load_state(state)
+    assert off._data_assimilation._last_obs_df.empty, (
+        "a run with streamflow nudging off adopted the checkpoint's lastobs"
+    )
+    assert _state_from(off)["last_obs"].empty
+
+
+def test_the_enabled_flags_track_the_real_config_schema():
+    """The flag names are hardcoded; a rename in troute-config would silently make
+    every type read False, keep every live frame, and exit 0. Build the flags through
+    the real pydantic model so a rename fails HERE rather than in a quiet run."""
+    from troute.config.compute_parameters import DataAssimilationParameters
+
+    dumped = DataAssimilationParameters(
+        streamflow_da={"streamflow_nudging": True},
+        reservoir_da={
+            "reservoir_persistence_da": {
+                "reservoir_persistence_usgs": True,
+                "reservoir_persistence_usace": True,
+                "reservoir_persistence_usbr": True,
+                "reservoir_persistence_greatLake": True,
+            },
+            "reservoir_rfc_da": {"reservoir_rfc_forecasts": True},
+        },
+    ).model_dump()
+
+    model = Model.__new__(Model)
+    model._config = {"compute_parameters": {"data_assimilation_parameters": dumped}}
+    assert model._reservoir_da_enabled() == {
+        "usgs": True, "usace": True, "usbr": True, "rfc": True, "gl": True
+    }
+    assert model._owns_lastobs() is True
+
+
+def test_a_scaling_run_keeps_its_checkpointed_lastobs():
+    """Scaling harvests lastobs, so a restore must not treat the frame as unowned.
+
+    Asking only about streamflow_nudging made a scaling-only run drop the
+    checkpoint's lastobs and restart its decay history, which is exactly the
+    cross-cycle continuity the harvest exists to provide.
+    """
+    model = _make_model(0.0, _ExecutionPlanLike(), nudging=False)
+    model._config["compute_parameters"]["data_assimilation_parameters"][
+        "streamflow_da"]["streamflow_scaling"] = True
+    model._data_assimilation._last_obs_df = pd.DataFrame()  # nothing built yet
+    saved = pd.DataFrame({"discharge": [42.0], "time_since_lastobs": [-1800.0]})
+
+    state = _no_da_state()
+    state["last_obs"] = saved
+    model.load_state(state)
+
+    pd.testing.assert_frame_equal(model._data_assimilation._last_obs_df, saved)
+
+
+def test_a_wider_checkpoint_roster_is_trimmed_to_this_run():
+    """A nudging checkpoint carries gages the scaling arm deliberately excludes.
+
+    Scaling's roster is a strict subset of nudging's (holdouts, reservoir-routed and
+    co-located gages are dropped), and the checkpoint records no producer mode.
+    Installing it whole hands _prep_da_dataframes segments the current frames do not
+    carry, which raises "not in index", or silently persists excluded gages.
+    """
+    model = _make_model(0.0, _ExecutionPlanLike())
+    model.dt = 300
+    model._scaling_da = _ScalingDAStub()
+    model._scaling_da.gage_seg = {"A": 1}   # this run assimilates seg 1
+    model._data_assimilation._last_obs_df = pd.DataFrame()
+
+    state = _no_da_state()
+    state["last_obs"] = pd.DataFrame({"discharge": [5.0, 9.0]}, index=[1, 2])
+    model.load_state(state)
+
+    got = model._data_assimilation._last_obs_df
+    assert list(got.index) == [1], f"seg 2 is not in this run's roster: {list(got.index)}"
+
+
+def test_a_matching_roster_is_left_alone():
+    model = _make_model(0.0, _ExecutionPlanLike())
+    model.dt = 300
+    model._scaling_da = _ScalingDAStub()
+    model._scaling_da.gage_seg = {"A": 1, "B": 2}
+    model._data_assimilation._last_obs_df = pd.DataFrame()
+    saved = pd.DataFrame({"discharge": [5.0, 9.0]}, index=[1, 2])
+    state = _no_da_state(); state["last_obs"] = saved
+    model.load_state(state)
+    pd.testing.assert_frame_equal(model._data_assimilation._last_obs_df, saved)

@@ -122,7 +122,10 @@ def test_flow_ratio_at_junction_with_stopped_branch() -> None:
     """A confluence keeps the flow-ratio split when one branch is stopped (Edge Case 1 + 2)."""
     idx = _series_index(1)
     # 3 and 4 merge at 2, then 2 -> 1 (gage); branch 4 is stopped (upstream gage/reservoir).
-    q_model = pd.DataFrame({1: [20.0], 2: [16.0], 3: [6.0]}, index=idx)
+    # The stopped branch still carries a column: every stop is a routed segment (another
+    # gage's link, or a lake node), so with_positions requires one and skips the site
+    # otherwise. Q_3 + Q_4 = 16 = Q_2, so the denominator is max(16, 16) = 16.
+    q_model = pd.DataFrame({1: [20.0], 2: [16.0], 3: [6.0], 4: [10.0]}, index=idx)
     q_obs = pd.DataFrame({"A": [30.0]}, index=idx)  # dQ_o = 10
     tree = build_one_gage_tree(
         gage_fp=1,
@@ -152,8 +155,10 @@ def test_flow_ratio_single_branch_not_amplified() -> None:
     (un-spun-up cold start, or a flood rising limb at CONUS scale).
     """
     idx = _series_index(1)
-    # 1 (gage) -> 2 (confluence) -> {3, 4}, branch 4 stopped. Q_3 (12) > Q_2 (4).
-    q_model = pd.DataFrame({1: [10.0], 2: [4.0], 3: [12.0]}, index=idx)
+    # 1 (gage) -> 2 (confluence) -> {3, 4}, branch 4 stopped and modeled DRY (a closed
+    # reservoir gate). It carries a column because with_positions requires one, and a
+    # zero flow leaves the branch sum at Q_3 = 12 > Q_2 = 4, which is the case under test.
+    q_model = pd.DataFrame({1: [10.0], 2: [4.0], 3: [12.0], 4: [0.0]}, index=idx)
     q_obs = pd.DataFrame({"A": [20.0]}, index=idx)  # dQ_o = 10 at gage
     tree = build_one_gage_tree(
         gage_fp=1,

@@ -1086,7 +1086,10 @@ class NHFPreprocessMixin:
             # reach collecting the lake's qlat.
             head_vfp = wb_group["virtual_fp_id"].iloc[0]
             head_rows = all_links[all_links["vfp_id"] == head_vfp]
-            headwater = (all_links if head_rows.empty else head_rows).iloc[0]
+            # .copy(): "downstream" is rewritten below, and writing into an .iloc[0]
+            # view of a sliced frame raises SettingWithCopyWarning. Nothing reads
+            # all_links afterwards, so a detached row is what was meant.
+            headwater = (all_links if head_rows.empty else head_rows).iloc[0].copy()
             head_id = int(headwater["up_node_id"])
             self.connections[head_id] = [ds]
             headwater["downstream"] = ds

@@ -158,9 +158,11 @@ class NHDNetwork(AbstractNetwork):
             'cs'        : 'ChSlp',
             }
         )
-        # Remove 'mainstem' col if it exists:
-        if 'mainstem' in cols:
-            del cols['mainstem']
+        # Drop columns the config did not supply. The Columns model defaults
+        # waterbody, alt, gages, mainstem and divide_id to None, and selecting a
+        # column named None raises; divide_id is HYFeatures-only, so every NHD
+        # config carried one and never reached the network build.
+        cols = {k: v for k, v in cols.items() if v is not None and k != 'mainstem'}
         
         # numeric code used to indicate network terminal segments
         terminal_code = self.supernetwork_parameters.get("terminal_code", 0)

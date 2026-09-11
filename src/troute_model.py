@@ -5,6 +5,7 @@ import time
 
 from troute.config import Config
 import nwm_routing.nwm_route as tr
+from nwm_routing.output import _convert_waterbody_depth
 
 from troute.network import bmi_array2df as a2df
 
@@ -521,7 +522,13 @@ def _retrieve_last_output(results, nts, waterbodies_df,):
     
     q_channel_df = flowveldepth.iloc[:,-3]
     v_channel_df = flowveldepth.iloc[:,-2]
-    d_channel_df = flowveldepth.iloc[:,-1]
+    # Reservoir rows carry elevation in the depth slot; d_lakeout_df above keeps it,
+    # the channel view gets a depth. On a copy of this one column, never in place:
+    # with a single compute job the frame can alias the kernel array, and
+    # _create_output_dataframes reads it again, converting a second time.
+    _d = flowveldepth.iloc[:,[-1]].copy()
+    _convert_waterbody_depth(_d, waterbodies_df)
+    d_channel_df = _d.iloc[:,0]
     
     segment_ids = flowveldepth.index.values.tolist()
 
@@ -569,6 +576,12 @@ def _create_output_dataframes(results, nts, waterbodies_df,):
     q_lakeout_df = flowveldepth.loc[wbdy_id_list].iloc[:,0::3]
     d_lakeout_df = flowveldepth.loc[wbdy_id_list].iloc[:,2::3]
     lakeout = pd.concat([i_lakeout_df, q_lakeout_df, d_lakeout_df], axis=1)
+
+    # Reservoir rows to depth, after lakeout takes its elevation copy above. On a copy
+    # for the same reason as _retrieve_last_output: the frame can alias the kernel
+    # array, which is read again afterwards.
+    flowveldepth = flowveldepth.copy()
+    _convert_waterbody_depth(flowveldepth, waterbodies_df)
     
     # segment_ids = flowveldepth.index.values.tolist() #TODO: do we need to return segment ids
     # to keep track of order?

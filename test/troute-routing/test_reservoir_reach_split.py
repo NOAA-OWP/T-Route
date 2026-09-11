@@ -15,28 +15,20 @@ treewise plan). These tests assert the invariant the kernel relies on: every
 reach that contains a waterbody segment is a singleton.
 """
 import pandas as pd
-import pytest
 
 import troute.nhd_network as nhd_network
 
-# The regression lives in the ExecutionPlan compute refactor (PR #98); the
-# current development compute path splits reaches at waterbodies correctly and
-# does not define these classes. The module-level skip makes this test a
-# forward guard: it activates automatically when the refactor lands and fails
-# if the waterbody reach split is reintroduced incorrectly.
-try:
-    from troute.routing.compute import (
-        AssimilationData,
-        ExecutionPlan,
-        NetworkTopology,
-        WaterbodyData,
-    )
-except ImportError:
-    pytest.skip(
-        "ExecutionPlan compute refactor not present; this guard activates "
-        "when it lands",
-        allow_module_level=True,
-    )
+# The try/except-ImportError skip that used to wrap this import was written
+# while the ExecutionPlan refactor was still landing. compute.py defines these
+# names now, so the guard only had one remaining effect: any future ImportError
+# in compute.py would silently skip this whole file, including the regressions
+# below, instead of failing.
+from troute.routing.compute import (
+    AssimilationData,
+    ExecutionPlan,
+    NetworkTopology,
+    WaterbodyData,
+)
 
 _WB_COLS = ["LkArea", "LkMxE", "OrificeA", "OrificeC", "OrificeE",
             "WeirC", "WeirE", "WeirL", "ifd", "qd0", "h0"]
@@ -117,6 +109,28 @@ def test_reservoir_reach_is_singleton_with_streamflow_da():
     assert lake_reaches, "lake node 30 not found in any reach"
     for reach in lake_reaches:
         assert reach == [30], f"reservoir reach must be [30], got {reach}"
+
+
+# lake 30 drains straight into lake 35, which drains to channel 40 -> 50
+_LAKE_CHAIN_NETWORK = {10: [30], 20: [30], 30: [35], 35: [40], 40: [50], 50: []}
+
+
+def test_adjacent_reservoirs_are_separate_reaches_with_streamflow_da():
+    """Two lakes in series must not share a reach.
+
+    The old XOR split only on entering or exiting a waterbody, so a lake draining
+    into another stayed in one reach and only the first was routed.
+    """
+    usgs_df = pd.DataFrame(0.0, index=[40], columns=[0])  # a non-empty gage frame
+    reaches = _decompose(_LAKE_CHAIN_NETWORK, lake_ids=[30, 35], usgs_df=usgs_df)
+    for lake in (30, 35):
+        lake_reaches = [r for r in reaches if lake in r]
+        assert lake_reaches, f"lake node {lake} not found in any reach"
+        for reach in lake_reaches:
+            assert reach == [lake], (
+                f"reservoir reach must be the singleton [{lake}], got {reach}; "
+                "adjacent waterbodies were merged, so only the first is routed."
+            )
 
 
 def test_no_waterbody_network_still_decomposes():

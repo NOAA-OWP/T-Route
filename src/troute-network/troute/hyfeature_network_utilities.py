@@ -110,13 +110,18 @@ def build_da_sets(da_params, run_sets, t0):
         if LakeOntario_outflow:
             LakeOntario_outflow = pathlib.Path(LakeOntario_outflow)
 
+        # timedelta of TimeSlice data. The convention is 15 minutes, and the filenames
+        # say so, but an observation record can arrive at any cadence: hourly USGS data in
+        # 15 minute-named files is common. Read the cadence from the directory rather than
+        # assuming it, or three names in four are enumerated, missed and warned about.
+        dt_timeslice = _timeslice_cadence(
+            usgs_timeslices_folder or usace_timeslices_folder or usbr_timeslices_folder
+        )
+
         # the number of timeslice files appended to the front- and back-ends
         # of the TimeSlice file interpolation stack
         pad_hours = da_params.get("timeslice_lookback_hours",0)
-        timeslice_pad = pad_hours * 4 # number of 15 minute TimeSlices in the pad
-
-        # timedelta of TimeSlice data - typically 15 minutes
-        dt_timeslice = timedelta(minutes = 15)
+        timeslice_pad = int(round(pad_hours * 3600 / dt_timeslice.total_seconds()))
 
         da_sets = [] # initialize list to store TimeSlice set lists
 
@@ -130,7 +135,7 @@ def build_da_sets(da_params, run_sets, t0):
             # timestamps of TimeSlice files desired for run set i
             timestamps = pd.date_range(
                 t0 - dt_timeslice * timeslice_pad,
-                run_sets[i]['final_timestamp'] + dt_timeslice * 4,
+                run_sets[i]['final_timestamp'] + _timeslice_lead_out(dt_timeslice),
                 freq=dt_timeslice
             )
 
@@ -195,6 +200,59 @@ def build_da_sets(da_params, run_sets, t0):
             
     return da_sets
 
+# Lead-out past the end of a run set, so the interpolator brackets the final model
+# timestep. One hour, which is what the old ``dt_timeslice * 4`` meant at the assumed
+# 15 minute cadence. Wall-clock like ``timeslice_lookback_hours`` at the front.
+_TIMESLICE_LEAD_OUT = timedelta(hours=1)
+
+
+def _timeslice_lead_out(dt_timeslice):
+    """Lead-out at *dt_timeslice* spacing, never less than one file.
+
+    A cadence coarser than the lead-out would round down to zero files past the end of
+    the run, leaving the last timestep nothing to interpolate against.
+    """
+    return max(_TIMESLICE_LEAD_OUT, dt_timeslice)
+
+
+def _timeslice_cadence(timeslices_folder, default=timedelta(minutes=15)):
+    """The spacing between the TimeSlice files in *timeslices_folder*.
+
+    Taken as the most common gap between consecutive file timestamps, which is robust to
+    a missing file here and there. Falls back to *default* when the directory is absent,
+    empty or holds a single file, so callers behave as they did before.
+
+    Arguments
+    ---------
+    - timeslices_folder (pathlib.PosixPath): TimeSlice directory
+    - default                   (timedelta): cadence to assume when it cannot be measured
+
+    Returns
+    -------
+    - cadence (timedelta)
+    """
+    if not timeslices_folder:
+        return default
+    folder = pathlib.Path(timeslices_folder)
+    if not folder.is_dir():
+        return default
+
+    stamps = []
+    for f in folder.glob("*TimeSlice.ncdf"):
+        try:
+            stamps.append(datetime.strptime(f.name[:19], "%Y-%m-%d_%H:%M:%S"))
+        except ValueError:
+            continue
+    if len(stamps) < 2:
+        return default
+
+    stamps.sort()
+    gaps = [b - a for a, b in zip(stamps, stamps[1:]) if b > a]
+    if not gaps:
+        return default
+    return max(set(gaps), key=gaps.count)
+
+
 def _check_timeslice_exists(filenames, timeslices_folder):
     """
     Check that each TimeSlice file in a list of files exists. Return a list of 
@@ -216,19 +274,45 @@ def _check_timeslice_exists(filenames, timeslices_folder):
     
     """
     
-    # check that all USGS TimeSlice files in the set actually exist
-    drop_list = []
+    # The caller spells the cadence token as 15min because that is the NWM
+    # convention, but the producer writes whatever its observations actually are
+    # (the hourly USGS store writes 60min). Match on the timestamp and the family
+    # and accept any cadence, so an hourly directory is not silently empty.
+    filenames_existing = []
+    substituted = []
     for f in filenames:
-        try:
-            J = pathlib.Path(timeslices_folder.joinpath(f))     
-            assert J.is_file() == True
-        except AssertionError:
+        J = pathlib.Path(timeslices_folder).joinpath(f)
+        if J.is_file():
+            filenames_existing.append(f)
+            continue
+        stamp, _, rest = f.partition(".")
+        cadence, _, family = rest.partition(".")
+        match = sorted(pathlib.Path(timeslices_folder).glob(f"{stamp}.*.{family}"))
+        if not match:
             LOG.warning("Missing TimeSlice file %s", J)
-            drop_list.append(f)
+            continue
+        if len(match) > 1:
+            # Two products for one timestamp is not the NWM layout, and picking
+            # by name would silently prefer whichever sorts first. Rare enough to
+            # report every time.
+            LOG.warning(
+                "Ambiguous TimeSlice for %s: %s; using %s",
+                stamp, [m.name for m in match], match[0].name,
+            )
+        else:
+            substituted.append((cadence, match[0].name.partition(".")[2].partition(".")[0]))
+        filenames_existing.append(match[0].name)
 
-    # Assemble a list of existing TimeSlice files, only
-    filenames_existing = [x for x in filenames if x not in drop_list]   
-    
+    if substituted:
+        # One line, not one per file: a directory written at another cadence
+        # substitutes EVERY file, on every window, for every arm. Every DISTINCT
+        # pair is named, so a directory that changes product mid-window shows both.
+        pairs = ", ".join(f"{req} -> {used}" for req, used in sorted(set(substituted)))
+        LOG.info(
+            "TimeSlice: %d file(s) matched at a different cadence (%s)",
+            len(substituted), pairs,
+        )
+
     return filenames_existing
 
 def build_forcing_sets(
@@ -240,6 +324,9 @@ def build_forcing_sets(
     nexus_input_folder = forcing_parameters.get("nexus_input_folder", None)
     nts                = forcing_parameters.get("nts", None)
     max_loop_size      = forcing_parameters.get("max_loop_size", 12)
+    if not max_loop_size:  # 0 is the schema's "automatic"
+        max_loop_size = 24
+        LOG.info("max_loop_size not set; using %d forcing file(s) per window.", max_loop_size)
     dt                 = forcing_parameters.get("dt", None)
 
     try:

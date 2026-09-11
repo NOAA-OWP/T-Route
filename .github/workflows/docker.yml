@@ -3,10 +3,10 @@ name: Build and Test Docker Image
 on:
   push:
     branches:
-      - master
+      - development
   pull_request:
     branches:
-      - master
+      - development
 jobs:
   build_and_test:
     runs-on: ubuntu-latest

@@ -147,7 +147,13 @@ class TestObservationsReachTheKernelGrid:
         assert np.isnan(usgs.loc[101].to_numpy()[2])
 
     def test_window_file_list_is_honored(self, obs_dir):
-        """da_run carries the same per-window list the nudging path consumes."""
+        """build_usgs_df honors whatever file list it is handed.
+
+        The DRIVERS now hand the scaling arm a run-spanning union rather than a
+        per-window list, because the reader interpolates non-locally and a
+        per-window list made the injected observations depend on max_loop_size.
+        This pins the method's own contract, which is unchanged.
+        """
         folder, sites, index = obs_dir
         da = _reader(folder, {sites[1]: 202})
         only_first_two = [
@@ -214,9 +220,11 @@ class TestDaSetsGate:
     def test_scaling_and_nudging_get_the_same_window_list(self, builder, obs_dir):
         """The head-to-head comparison this gate exists for.
 
-        Two arms pointed at one directory must be handed the SAME per-window files.
-        Before the gate, the scaling arm got no list and globbed the directory instead,
-        so the two schemes were compared on different observation sets.
+        build_da_sets must offer both arms the SAME per-window files. Before the gate
+        the scaling arm got no list and globbed the directory instead, so the two
+        schemes were compared on different observation sets. What each DRIVER then
+        passes differs by design: nudging consumes the per-window list, the scaling
+        injection the union across windows.
         """
         folder, _, _ = obs_dir
         common = {"usgs_timeslices_folder": str(folder)}
@@ -291,3 +299,35 @@ class TestSilentNoDataFailuresAreRejected:
         da = _reader(folder, {sites[1]: 202})
         with pytest.raises(ValueError, match="whole minutes"):
             da.build_usgs_df(index[0], dt, 3)
+
+
+def test_span_da_runs_is_partition_invariant():
+    """The same span, chunked two ways, must yield one identical file list.
+
+    The reader interpolates across gaps with limit_direction="both", which is
+    non-local, so the filled value at a timestamp depends on how much series was
+    loaded. Per-window lists therefore made the injected observations, and the routed
+    discharge, depend on max_loop_size -- measured on VPU 01 as 52.1 cms in the
+    injected frame and 76.6 cms in flow, and 0.0 once every window read this union.
+    """
+    from nwm_routing.scaling_da_apply import span_da_runs
+
+    files = [f"t{i:02d}.15min.usgsTimeSlice.ncdf" for i in range(12)]
+    coarse = [{"usgs_timeslice_files": files[:6]}, {"usgs_timeslice_files": files[4:]}]
+    fine = [{"usgs_timeslice_files": files[i:i + 3]} for i in range(0, 12, 3)]
+    single = [{"usgs_timeslice_files": files}]
+
+    got = [span_da_runs(p)["usgs_timeslice_files"] for p in (coarse, fine, single)]
+    assert got[0] == got[1] == got[2] == sorted(files)
+
+
+def test_span_da_runs_handles_an_absent_list():
+    from nwm_routing.scaling_da_apply import span_da_runs
+
+    assert span_da_runs([]) is None
+    assert span_da_runs([None, None]) is None
+    # a PRESENT but empty list stays present-and-empty: build_da_sets chose no file
+    assert span_da_runs([{"usgs_timeslice_files": []}])["usgs_timeslice_files"] == []
+    # ...and an ABSENT key stays absent, so the reader keeps its glob fallback rather
+    # than silently seeing "no files".
+    assert "usgs_timeslice_files" not in span_da_runs([{"other": 1}])

@@ -44,8 +44,8 @@ def timeslice_station_roster(folder: Path, cpu_pool: int = 1) -> set[str]:
     carries only the stations reporting at that instant, and a gage missing from
     the roster is excluded from assimilation for the entire run.
 
-    ponytail: O(files) at startup (~35k for a CONUS year, a few seconds in
-    parallel); cache the roster beside the directory if it ever matters.
+    O(files) at startup (~35k for a CONUS year, a few seconds in parallel). Cache
+    the roster beside the directory if that ever matters.
     """
     files = sorted(folder.glob(f"*.{TIMESLICE_GLOB_SUFFIX}"))
     if not files:

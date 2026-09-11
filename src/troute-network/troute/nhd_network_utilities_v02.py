@@ -10,6 +10,7 @@ import netCDF4
 from joblib import delayed, Parallel
 
 import troute.nhd_io as nhd_io
+from troute.hyfeature_network_utilities import _timeslice_cadence, _timeslice_lead_out
 import troute.nhd_network as nhd_network
 
 LOG = logging.getLogger("TROUTE")
@@ -263,6 +264,9 @@ def build_forcing_sets(
     qlat_input_folder = forcing_parameters.get("qlat_input_folder", None)
     nts = forcing_parameters.get("nts", None)
     max_loop_size = forcing_parameters.get("max_loop_size", 12)
+    if not max_loop_size:  # 0 is the schema's "automatic"
+        max_loop_size = 24
+        LOG.info("max_loop_size not set; using %d forcing file(s) per window.", max_loop_size)
     dt = forcing_parameters.get("dt", None)
     
     try:
@@ -481,19 +485,45 @@ def _check_timeslice_exists(filenames, timeslices_folder):
     
     """
     
-    # check that all USGS TimeSlice files in the set actually exist
-    drop_list = []
+    # The caller spells the cadence token as 15min because that is the NWM
+    # convention, but the producer writes whatever its observations actually are
+    # (the hourly USGS store writes 60min). Match on the timestamp and the family
+    # and accept any cadence, so an hourly directory is not silently empty.
+    filenames_existing = []
+    substituted = []
     for f in filenames:
-        try:
-            J = pathlib.Path(timeslices_folder.joinpath(f))     
-            assert J.is_file() == True
-        except AssertionError:
+        J = pathlib.Path(timeslices_folder).joinpath(f)
+        if J.is_file():
+            filenames_existing.append(f)
+            continue
+        stamp, _, rest = f.partition(".")
+        cadence, _, family = rest.partition(".")
+        match = sorted(pathlib.Path(timeslices_folder).glob(f"{stamp}.*.{family}"))
+        if not match:
             LOG.warning("Missing TimeSlice file %s", J)
-            drop_list.append(f)
+            continue
+        if len(match) > 1:
+            # Two products for one timestamp is not the NWM layout, and picking
+            # by name would silently prefer whichever sorts first. Rare enough to
+            # report every time.
+            LOG.warning(
+                "Ambiguous TimeSlice for %s: %s; using %s",
+                stamp, [m.name for m in match], match[0].name,
+            )
+        else:
+            substituted.append((cadence, match[0].name.partition(".")[2].partition(".")[0]))
+        filenames_existing.append(match[0].name)
 
-    # Assemble a list of existing TimeSlice files, only
-    filenames_existing = [x for x in filenames if x not in drop_list]   
-    
+    if substituted:
+        # One line, not one per file: a directory written at another cadence
+        # substitutes EVERY file, on every window, for every arm. Every DISTINCT
+        # pair is named, so a directory that changes product mid-window shows both.
+        pairs = ", ".join(f"{req} -> {used}" for req, used in sorted(set(substituted)))
+        LOG.info(
+            "TimeSlice: %d file(s) matched at a different cadence (%s)",
+            len(substituted), pairs,
+        )
+
     return filenames_existing
 
 def build_da_sets(da_params, run_sets, t0):
@@ -564,13 +594,17 @@ def build_da_sets(da_params, run_sets, t0):
         if usace_timeslices_folder:
             usace_timeslices_folder = pathlib.Path(usace_timeslices_folder)
         
+        # Measured, not assumed. Shares the helper with the -V5/NHF copy of
+        # build_da_sets so the two cannot drift. Falls back to 15 minutes, the
+        # canonical NWM cadence this path assumed.
+        dt_timeslice = _timeslice_cadence(
+            usgs_timeslices_folder or usace_timeslices_folder
+        )
+
         # the number of timeslice files appended to the front- and back-ends
         # of the TimeSlice file interpolation stack
         pad_hours = da_params.get("timeslice_lookback_hours",0)
-        timeslice_pad = pad_hours * 4 # number of 15 minute TimeSlices in the pad
-
-        # timedelta of TimeSlice data - typically 15 minutes
-        dt_timeslice = timedelta(minutes = 15)
+        timeslice_pad = int(round(pad_hours * 3600 / dt_timeslice.total_seconds()))
 
         da_sets = [] # initialize list to store TimeSlice set lists
 
@@ -584,7 +618,7 @@ def build_da_sets(da_params, run_sets, t0):
             # timestamps of TimeSlice files desired for run set i
             timestamps = pd.date_range(
                 t0 - dt_timeslice * timeslice_pad,
-                run_sets[i]['final_timestamp'] + dt_timeslice * 4,
+                run_sets[i]['final_timestamp'] + _timeslice_lead_out(dt_timeslice),
                 freq=dt_timeslice
             )
 

@@ -34,7 +34,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import chain
 from functools import cached_property, partial
-from typing import Any, Callable, Literal, Self, Sequence, TYPE_CHECKING, Iterable, TypedDict, Union, cast, get_args, overload
+from typing import Any, Callable, Literal, Self, Sequence, Sized, TYPE_CHECKING, Iterable, TypedDict, Union, cast, get_args, overload
 from joblib import delayed, Parallel
 from datetime import datetime
 import pandas as pd
@@ -1085,6 +1085,24 @@ def _prep_da_positions_byreach(reach_list, gage_index):
 
     return reach_key, gage_reach_i
 
+def _require_reservoir_da_params(
+    param_df: pd.DataFrame, wbodies_sub: Sized, label: str
+) -> None:
+    """Name the cause of an obs/params mismatch instead of a bare KeyError.
+
+    Only when the job has waterbodies of this type: with none selected the lookups
+    are `.loc[[]]`, which an empty frame serves.
+    """
+    if len(wbodies_sub) and param_df.empty:
+        msg = (
+            f"{label} reservoir DA has observations but an empty parameter frame. "
+            "The two are built together, so the parameters were replaced afterwards, "
+            f"typically by restoring a saved state from a run with {label} DA off. "
+            "Restore a state written with it on, or start without restoring one."
+        )
+        raise ValueError(msg)
+
+
 def _prep_reservoir_da_dataframes(reservoir_usgs_df,
                                   reservoir_usgs_param_df,
                                   reservoir_usace_df,
@@ -1144,6 +1162,7 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
                                 ].index
         if exclude_segments:
             usgs_wbodies_sub = list(set(usgs_wbodies_sub).difference(set(exclude_segments)))
+        _require_reservoir_da_params(reservoir_usgs_param_df, usgs_wbodies_sub, "USGS")
         reservoir_usgs_df_sub = reservoir_usgs_df.loc[usgs_wbodies_sub]
         reservoir_usgs_df_time = []
         for timestamp in reservoir_usgs_df.columns:
@@ -1173,6 +1192,7 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
                                 ].index
         if exclude_segments:
             usace_wbodies_sub = list(set(usace_wbodies_sub).difference(set(exclude_segments)))
+        _require_reservoir_da_params(reservoir_usace_param_df, usace_wbodies_sub, "USACE")
         reservoir_usace_df_sub = reservoir_usace_df.loc[usace_wbodies_sub]
         reservoir_usace_df_time = []
         for timestamp in reservoir_usace_df.columns:
@@ -1199,6 +1219,7 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
                                 ].index
         if exclude_segments:
             usbr_wbodies_sub = list(set(usbr_wbodies_sub).difference(set(exclude_segments)))
+        _require_reservoir_da_params(reservoir_usbr_param_df, usbr_wbodies_sub, "USBR")
         reservoir_usbr_df_sub = reservoir_usbr_df.loc[usbr_wbodies_sub]
         reservoir_usbr_df_time = []
         for timestamp in reservoir_usbr_df.columns:
@@ -1225,6 +1246,7 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
             ].index
         if exclude_segments:
             rfc_wbodies_sub = list(set(rfc_wbodies_sub).difference(set(exclude_segments)))
+        _require_reservoir_da_params(reservoir_rfc_param_df, rfc_wbodies_sub, "RFC")
         reservoir_rfc_df_sub = reservoir_rfc_df.loc[rfc_wbodies_sub]
         reservoir_rfc_totalCounts = reservoir_rfc_param_df['totalCounts'].loc[rfc_wbodies_sub].to_numpy()
         reservoir_rfc_file = reservoir_rfc_param_df['file'].loc[rfc_wbodies_sub].to_list()
@@ -1253,6 +1275,7 @@ def _prep_reservoir_da_dataframes(reservoir_usgs_df,
             ].index
         if exclude_segments:
             gl_wbodies_sub = list(set(gl_wbodies_sub).difference(set(exclude_segments)))
+        _require_reservoir_da_params(great_lakes_param_df, gl_wbodies_sub, "Great Lakes")
         gl_df_sub = great_lakes_df[great_lakes_df['lake_id'].isin(gl_wbodies_sub)]
         gl_climatology_df_sub = great_lakes_climatology_df.loc[gl_wbodies_sub]
         gl_param_df_sub = great_lakes_param_df[great_lakes_param_df['lake_id'].isin(gl_wbodies_sub)]
@@ -1353,7 +1376,7 @@ def compute_log_mc(
         preRunLog.write("-----\n")
         preRunLog.write("Streamflow DA\n")
         if ('streamflow_da' in data_assimilation_parameters.keys()):  
-            outPutStr = "Streamflow nudging: "+str(data_assimilation_parameters['streamflow_da']['streamflow_nudging'])
+            outPutStr = "Streamflow nudging: "+str(data_assimilation_parameters['streamflow_da'].get('streamflow_nudging', False))
             preRunLog.write(outPutStr+'\n')
             LOG.info(outPutStr)
             outPutStr = "Diffusive streamflow nudging: "+str(data_assimilation_parameters['streamflow_da']['diffusive_streamflow_nudging'])
@@ -1362,16 +1385,16 @@ def compute_log_mc(
             preRunLog.write("Lastobs file: "+str(data_assimilation_parameters['streamflow_da']['lastobs_file'])+'\n')
             preRunLog.write("-----\n")
             preRunLog.write("Reservoir DA\n")
-            outPutStr = "Reservoir persistence USGS: "+str(data_assimilation_parameters['reservoir_da']['reservoir_persistence_da']['reservoir_persistence_usgs'])
+            outPutStr = "Reservoir persistence USGS: "+str((data_assimilation_parameters.get('reservoir_da') or {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usgs', False))
             preRunLog.write(outPutStr+'\n')
             LOG.info(outPutStr)
-            outPutStr = "Reservoir persistence USACE: "+str(data_assimilation_parameters['reservoir_da']['reservoir_persistence_da']['reservoir_persistence_usace'])
+            outPutStr = "Reservoir persistence USACE: "+str((data_assimilation_parameters.get('reservoir_da') or {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usace', False))
             preRunLog.write(outPutStr+'\n')
             LOG.info(outPutStr)
-            outPutStr = "Reservoir persistence USBR: "+str(data_assimilation_parameters['reservoir_da']['reservoir_persistence_da']['reservoir_persistence_usbr'])
+            outPutStr = "Reservoir persistence USBR: "+str((data_assimilation_parameters.get('reservoir_da') or {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usbr', False))
             preRunLog.write(outPutStr+'\n')
             LOG.info(outPutStr)
-            preRunLog.write("Reservoir RFC forecasts: "+str(data_assimilation_parameters['reservoir_da']['reservoir_rfc_da']['reservoir_rfc_forecasts'])+'\n')
+            preRunLog.write("Reservoir RFC forecasts: "+str((data_assimilation_parameters.get('reservoir_da') or {}).get('reservoir_rfc_da', {}).get('reservoir_rfc_forecasts', False))+'\n')
 
         preRunLog.write("\n")                   
         preRunLog.write("****************************\n") 
@@ -2083,7 +2106,7 @@ def compute_nhd_routing_v02(
         # Donors are split points as well as gages. The kernel routes a whole reach
         # in one compute_reach_kernel call, chaining each segment's outflow into the
         # next, and only subtracts the diversion afterwards on copy-out. A donor in
-        # the middle of a reach therefore hands its neighbours undiverted flow, and
+        # the middle of a reach therefore hands its neighbors undiverted flow, and
         # the transfer never leaves the river. Splitting here makes the donor its own
         # single-segment reach, so the reduced value is what the next reach reads as
         # its upstream inflow.

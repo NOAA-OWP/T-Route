@@ -242,9 +242,8 @@ class StreamflowDA(BaseModel):
             raise ValueError(
                 "streamflow_da.streamflow_nudging and "
                 "streamflow_da.streamflow_scaling are mutually exclusive: both "
-                "drive the same Muskingum-Cunge nudging override, and nudging's "
-                "lastobs state would give the scaling arm cross-window decay "
-                "continuity it is documented not to have."
+                "drive the same Muskingum-Cunge nudging override, so enabling both "
+                "would apply two corrections to one gage."
             )
         return self
 
@@ -786,10 +785,20 @@ class ForcingParameters(BaseModel):
     """
     Number of timesteps. This value, multiplied by 'dt', gives the total simulation time in seconds.
     """
-    max_loop_size: int = 24
+    max_loop_size: int = Field(0, ge=0)
     """
-    Value is in hours. To handle memory issues, t-route can divvy it's simulation time into chunks, reducing the amount 
+    Value is in hours. To handle memory issues, t-route can divvy it's simulation time into chunks, reducing the amount
     of forcing and data assimilation files it reads into memory at once. This is the size of those time loops.
+
+    0 (the default) sizes it automatically, and both drivers log what they chose.
+    Under BMI that means 24 forcing columns, never shorter than the DA's own span and
+    capped by the memory this process may actually use, which inside a container is
+    the cgroup's remaining budget rather than the host's free memory. The CLI has no memory estimator, so there it means a
+    flat 24, still enlarged to cover the DA span.
+
+    Setting a value pins the window. It only changes results when the DA has a span,
+    since otherwise the partition does not reach them, and a value longer than the
+    driver's update cannot bound memory at all.
     """
     qlat_file_index_col: str = "feature_id"
     """

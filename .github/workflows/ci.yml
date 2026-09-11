@@ -1,0 +1,64 @@
+name: tests
+
+# The previous workflow only fired on master, which this repository does not use,
+# so nothing gated a pull request and four end-to-end cases sat broken.
+on:
+  push:
+    branches: [ development ]
+  pull_request:
+    branches: [ development ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    env:
+      # compiler.sh reads $NETCDF as the include dir and otherwise falls back to
+      # an openmpi path that does not exist on a plain runner. Same value the
+      # image sets; see docker/Dockerfile.dev.
+      NETCDF: /usr/include
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Matching docker/Dockerfile.dev: the Fortran kernels need gfortran/make,
+      # and the reservoir kernel links -lnetcdff/-lnetcdf and reads nc-config.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc g++ gfortran make cmake git \
+            libnetcdf-dev libnetcdff-dev netcdf-bin
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          # [test] carries pytest plus bmipy, dataretrieval, s3fs and fsspec,
+          # which the suite imports. matplotlib and psutil match the image's base
+          # layer; the nhf diagnostics helpers import them.
+          python -m pip install .[test]
+          python -m pip install matplotlib psutil
+
+      # Builds the Fortran kernels and the Cython extensions, then reinstalls the
+      # packages non-editable, as the production image does.
+      - name: Build t-route
+        run: ./compiler.sh no-e
+
+      # -m "not integration" drops only the NHF cases that need preprocessed data
+      # from outside the repository. Everything else, including the LowerColorado
+      # end-to-end runs, uses data committed under test/.
+      - name: Run tests
+        run: pytest -q -m "not integration" --durations=10

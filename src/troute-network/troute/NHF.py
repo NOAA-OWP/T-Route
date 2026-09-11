@@ -136,6 +136,9 @@ class NHF(NHFPreprocessMixin, AbstractNetwork):
             # Preprocess data assimilation objects
             self.preprocess_data_assimilation(gages, reservoir_da)
 
+            # Needs both the crosswalk and the resolved gages, so it runs here.
+            self._publish_gage_link_for_gaged_flowpaths()
+
             # Resolved here, where the flowpaths layer is still in scope; the DA reads
             # it to pick each gage tree's region theta.
             self.build_gage_vpu_map(gages, flowpaths)
@@ -355,6 +358,52 @@ class NHF(NHFPreprocessMixin, AbstractNetwork):
                 empty_links.append(link_id)
         for link_id in empty_links:
             del self._fp_outlet_crosswalk[link_id]
+
+    def _publish_gage_link_for_gaged_flowpaths(self):
+        """Report a gaged flowpath at the link its observation is assimilated on.
+
+        A gage is placed at the outlet of its VIRTUAL flowpath, but output is
+        published at the outlet of the flowpath, and those are different links
+        whenever a flowpath holds several virtual flowpaths in series (157 of 665
+        gages on VPU 01). The published series was then a routed distance below the
+        value the DA had replaced, so it converged towards the observation over the
+        reach's response time instead of matching it, and every skill number
+        computed at those features was biased against the assimilation.
+        """
+        if not self._gages or not self._fp_outlet_crosswalk:
+            return
+        fp_by_link = self._dataframe["fp_id"]
+        # Where each fp is published today, for the single-fp entries only: a link
+        # carrying several fps is a merged mapping and moving one out of it would
+        # change what the others sum to.
+        link_of_fp = {
+            fps[0]: link
+            for link, fps in self._fp_outlet_crosswalk.items()
+            if len(fps) == 1
+        }
+        moved = 0
+        # link_gage_df is not built until AbstractNetwork.__init__, which runs after
+        # this, so read the same dict it is built from.
+        for gage_link in pd.DataFrame.from_dict(self._gages).index:
+            gage_link = int(gage_link)
+            fp_id = fp_by_link.get(gage_link)
+            if fp_id is None:
+                continue
+            fp_id = int(fp_id)
+            current = link_of_fp.get(fp_id)
+            if current is None or current == gage_link:
+                continue
+            self._fp_outlet_crosswalk[current].remove(fp_id)
+            if not self._fp_outlet_crosswalk[current]:
+                del self._fp_outlet_crosswalk[current]
+            self._fp_outlet_crosswalk[gage_link].append(fp_id)
+            link_of_fp[fp_id] = gage_link
+            moved += 1
+        if moved:
+            LOG.info(
+                "gages: %d gaged flowpath(s) now report at their assimilated link "
+                "rather than the flowpath outlet", moved,
+            )
 
     def _build_div_weighting_matrix(self, virtual_flowpaths: pd.DataFrame, reference_flowpaths: pd.DataFrame, nexus_remapping: dict[int, int]) -> pd.DataFrame:
         """Create weights that can be used to expand div direct runoff into vfp direct runoff.
