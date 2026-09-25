@@ -1,7 +1,4 @@
-from pydantic import BaseModel
-
-from .types import FilePath, DirectoryPath
-
+from pydantic import BaseModel, DirectoryPath, FilePath
 
 class ReservoirDataAssimilationParameters(BaseModel):
     level_pool: "LevelPool"
@@ -31,4 +28,4 @@ class Persistence(BaseModel):
     qc_threshold: int  # 1
 
 
-ReservoirDataAssimilationParameters.update_forward_refs()
+ReservoirDataAssimilationParameters.model_rebuild()

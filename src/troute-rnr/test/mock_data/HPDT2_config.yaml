@@ -1,0 +1,68 @@
+compute_parameters:
+  assume_short_ts: true
+  compute_kernel: V02-structured
+  cpu_pool: 36
+  data_assimilation_parameters:
+    reservoir_da:
+      reservoir_persistence_da:
+        reservoir_persistence_usace: false
+        reservoir_persistence_usgs: false
+      reservoir_rfc_da:
+        reservoir_rfc_forecasts: false
+    streamflow_da:
+      diffusive_streamflow_nudging: false
+      streamflow_nudging: false
+  forcing_parameters:
+    coastal_boundary_input_file: null
+    dt: 300
+    max_loop_size: 48
+    nts: 1152
+    qlat_file_pattern_filter: '*.CHRTOUT_DOMAIN1.csv'
+    qlat_input_folder: /home/tadd.bindas/github/pi6/t-route/src/troute-rnr/base_files/tmp_flow/HPDT2
+    qts_subdivisions: 12
+  hybrid_parameters:
+    coastal_boundary_domain: null
+    diffusive_domain: null
+    refactored_domain: null
+    refactored_topobathy_domain: null
+    run_hybrid_routing: false
+    run_refactored_network: false
+    topobathy_domain: null
+    use_natl_xsections: false
+  parallel_compute_method: by-subnetwork-jit-clustered
+  restart_parameters:
+    lite_channel_restart_file: /home/tadd.bindas/github/pi6/t-route/src/troute-rnr/base_files/tmp_restart_flow/HPDT2_2025-05-05_21:00.pkl
+    lite_waterbody_restart_file: null
+    start_datetime: 2025-05-05_21:00
+  subnetwork_target_size: 10000
+log_parameters:
+  log_level: INFO
+  showtiming: true
+network_topology_parameters:
+  supernetwork_parameters:
+    columns:
+      alt: alt
+      bw: BtmWdth
+      cs: ChSlp
+      downstream: to
+      dx: Length_m
+      gages: gage
+      key: id
+      mainstem: mainstem
+      musk: MusK
+      musx: MusX
+      n: n
+      ncc: nCC
+      s0: So
+      tw: TopWdth
+      twcc: TopWdthCC
+      waterbody: WaterbodyID
+    geo_file_path: /home/tadd.bindas/github/pi6/t-route/src/troute-rnr/base_files/tmp_domain.gpkg
+  waterbody_parameters:
+    break_network_at_waterbodies: true
+output_parameters:
+  stream_output:
+    stream_output_directory: /home/tadd.bindas/github/pi6/t-route/data/output/HPDT2
+    stream_output_internal_frequency: 60
+    stream_output_time: -1
+    stream_output_type: .nc

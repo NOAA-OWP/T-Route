@@ -14,9 +14,7 @@ import pyarrow.parquet as pq
 
 import troute.nhd_io as nhd_io
 
-
-LOG = logging.getLogger('')
-
+LOG = logging.getLogger("TROUTE")
 
 def build_da_sets(da_params, run_sets, t0):
     """
@@ -48,6 +46,10 @@ def build_da_sets(da_params, run_sets, t0):
         "usace_timeslices_folder",
         None
     )
+    usbr_timeslices_folder = da_params.get(
+        "usbr_timeslices_folder",
+        None
+    )
     canada_timeslices_folder = da_params.get(
         "canada_timeslices_folder",
         None
@@ -59,24 +61,40 @@ def build_da_sets(da_params, run_sets, t0):
     # User-specified DA ON/OFF preferences
     usace_da = False
     usgs_da = False
+    # Bound here, not only inside the reservoir_persistence_da branch below: the
+    # `not usbr_da` test further down runs unconditionally, so a config with
+    # streamflow nudging and no reservoir persistence DA raised UnboundLocalError
+    # before it could build a single TimeSlice set.
+    usbr_da = False
     GreatLakes_da = False
     reservoir_persistence_da = da_params.get('reservoir_da', {}).get('reservoir_persistence_da', False)
     if reservoir_persistence_da:
         usgs_da = reservoir_persistence_da.get('reservoir_persistence_usgs', False)
         usace_da = reservoir_persistence_da.get('reservoir_persistence_usace', False)
+        usbr_da = reservoir_persistence_da.get('reservoir_persistence_usbr', False)
         GreatLakes_da = reservoir_persistence_da.get('reservoir_persistence_greatLake', False)
 
     nudging = False
     streamflow_da = da_params.get('streamflow_da', False)
     if streamflow_da:
         nudging = streamflow_da.get('streamflow_nudging', False)
-        
-    if not usgs_da and not usace_da and not GreatLakes_da and not nudging:
+
+    # The scaling DA is a third TimeSlice consumer and does not require nudging;
+    # without it here a scaling-only config got no per-window file list and fell
+    # back to globbing the whole directory. Same gate exists in
+    # nhd_network_utilities_v02.build_da_sets -- keep both.
+    scaling = bool(streamflow_da) and streamflow_da.get('streamflow_scaling', False)
+
+    # The diversion reads its gage from the TimeSlices on its own, nudging or not.
+    diversion = bool((da_params.get('diversion_da') or {}).get('diversion_gage_crosswalk'))
+
+    if (not usgs_da and not usace_da and not usbr_da and not GreatLakes_da
+            and not nudging and not scaling and not diversion):
         # if all DA capabilities are OFF, return empty dictionary
         da_sets = [{} for _ in run_sets]
     
     # if no user-input timeslice folders, a list of empty dictionaries
-    elif not usgs_timeslices_folder and not usace_timeslices_folder and not canada_timeslices_folder:
+    elif not usgs_timeslices_folder and not usace_timeslices_folder and not usbr_timeslices_folder and not canada_timeslices_folder:
         # if no timeslice folders, return empty dictionary
         da_sets = [{} for _ in run_sets]
         
@@ -88,18 +106,25 @@ def build_da_sets(da_params, run_sets, t0):
             usgs_timeslices_folder = pathlib.Path(usgs_timeslices_folder)
         if usace_timeslices_folder:
             usace_timeslices_folder = pathlib.Path(usace_timeslices_folder)
+        if usbr_timeslices_folder:
+            usbr_timeslices_folder = pathlib.Path(usbr_timeslices_folder)
         if canada_timeslices_folder:
             canada_timeslices_folder = pathlib.Path(canada_timeslices_folder)
         if LakeOntario_outflow:
             LakeOntario_outflow = pathlib.Path(LakeOntario_outflow)
 
+        # timedelta of TimeSlice data. The convention is 15 minutes, and the filenames
+        # say so, but an observation record can arrive at any cadence: hourly USGS data in
+        # 15 minute-named files is common. Read the cadence from the directory rather than
+        # assuming it, or three names in four are enumerated, missed and warned about.
+        dt_timeslice = _timeslice_cadence(
+            usgs_timeslices_folder or usace_timeslices_folder or usbr_timeslices_folder
+        )
+
         # the number of timeslice files appended to the front- and back-ends
         # of the TimeSlice file interpolation stack
         pad_hours = da_params.get("timeslice_lookback_hours",0)
-        timeslice_pad = pad_hours * 4 # number of 15 minute TimeSlices in the pad
-
-        # timedelta of TimeSlice data - typically 15 minutes
-        dt_timeslice = timedelta(minutes = 15)
+        timeslice_pad = int(round(pad_hours * 3600 / dt_timeslice.total_seconds()))
 
         da_sets = [] # initialize list to store TimeSlice set lists
 
@@ -108,17 +133,19 @@ def build_da_sets(da_params, run_sets, t0):
             
             # Append an empty dictionary to the loop, which be used to hold
             # lists of USGS and USACE TimeSlice files.
-            da_sets.append({})
+            # The window's length, so the diversion fill can extend its row onto the
+            # routing grid without knowing the run's total.
+            da_sets.append({'nts': set_dict.get('nts')})
 
             # timestamps of TimeSlice files desired for run set i
             timestamps = pd.date_range(
                 t0 - dt_timeslice * timeslice_pad,
-                run_sets[i]['final_timestamp'] + dt_timeslice * 4,
+                run_sets[i]['final_timestamp'] + _timeslice_lead_out(dt_timeslice),
                 freq=dt_timeslice
             )
 
             # identify available USGS TimeSlices in run set i
-            if (usgs_timeslices_folder and nudging) or (usgs_timeslices_folder and usgs_da):
+            if usgs_timeslices_folder and (nudging or usgs_da or scaling or diversion):
                 filenames_usgs = (timestamps.strftime('%Y-%m-%d_%H:%M:%S') 
                             + '.15min.usgsTimeSlice.ncdf').to_list()
                 
@@ -145,6 +172,20 @@ def build_da_sets(da_params, run_sets, t0):
                 # Add available TimeSlices to da_sets list
                 da_sets[i]['usace_timeslice_files'] = filenames_usace
 
+            # identify available USACE TimeSlices in run set i
+            if usbr_timeslices_folder and usbr_da:
+                filenames_usbr = (timestamps.strftime('%Y-%m-%d_%H:%M:%S') 
+                            + '.15min.usbrTimeSlice.ncdf').to_list()
+                
+                # identify available USACE TimeSlices
+                filenames_usbr = _check_timeslice_exists(
+                    filenames_usbr, 
+                    usbr_timeslices_folder
+                )
+                
+                # Add available TimeSlices to da_sets list
+                da_sets[i]['usbr_timeslice_files'] = filenames_usbr
+
             # identify available USGS TimeSlices in run set i
             if canada_timeslices_folder and GreatLakes_da:
                 filenames_canada = (timestamps.strftime('%Y-%m-%d_%H:%M:%S') 
@@ -163,6 +204,59 @@ def build_da_sets(da_params, run_sets, t0):
             t0 = run_sets[i]['final_timestamp']
             
     return da_sets
+
+# Lead-out past the end of a run set, so the interpolator brackets the final model
+# timestep. One hour, which is what the old ``dt_timeslice * 4`` meant at the assumed
+# 15 minute cadence. Wall-clock like ``timeslice_lookback_hours`` at the front.
+_TIMESLICE_LEAD_OUT = timedelta(hours=1)
+
+
+def _timeslice_lead_out(dt_timeslice):
+    """Lead-out at *dt_timeslice* spacing, never less than one file.
+
+    A cadence coarser than the lead-out would round down to zero files past the end of
+    the run, leaving the last timestep nothing to interpolate against.
+    """
+    return max(_TIMESLICE_LEAD_OUT, dt_timeslice)
+
+
+def _timeslice_cadence(timeslices_folder, default=timedelta(minutes=15)):
+    """The spacing between the TimeSlice files in *timeslices_folder*.
+
+    Taken as the most common gap between consecutive file timestamps, which is robust to
+    a missing file here and there. Falls back to *default* when the directory is absent,
+    empty or holds a single file, so callers behave as they did before.
+
+    Arguments
+    ---------
+    - timeslices_folder (pathlib.PosixPath): TimeSlice directory
+    - default                   (timedelta): cadence to assume when it cannot be measured
+
+    Returns
+    -------
+    - cadence (timedelta)
+    """
+    if not timeslices_folder:
+        return default
+    folder = pathlib.Path(timeslices_folder)
+    if not folder.is_dir():
+        return default
+
+    stamps = []
+    for f in folder.glob("*TimeSlice.ncdf"):
+        try:
+            stamps.append(datetime.strptime(f.name[:19], "%Y-%m-%d_%H:%M:%S"))
+        except ValueError:
+            continue
+    if len(stamps) < 2:
+        return default
+
+    stamps.sort()
+    gaps = [b - a for a, b in zip(stamps, stamps[1:]) if b > a]
+    if not gaps:
+        return default
+    return max(set(gaps), key=gaps.count)
+
 
 def _check_timeslice_exists(filenames, timeslices_folder):
     """
@@ -185,19 +279,53 @@ def _check_timeslice_exists(filenames, timeslices_folder):
     
     """
     
-    # check that all USGS TimeSlice files in the set actually exist
-    drop_list = []
+    # The caller spells the cadence token as 15min because that is the NWM
+    # convention, but the producer writes whatever its observations actually are
+    # (the hourly USGS store writes 60min). Match on the timestamp and the family
+    # and accept any cadence, so an hourly directory is not silently empty.
+    filenames_existing = []
+    substituted = []
+    missing = []
     for f in filenames:
-        try:
-            J = pathlib.Path(timeslices_folder.joinpath(f))     
-            assert J.is_file() == True
-        except AssertionError:
-            LOG.warning("Missing TimeSlice file %s", J)
-            drop_list.append(f)
+        J = pathlib.Path(timeslices_folder).joinpath(f)
+        if J.is_file():
+            filenames_existing.append(f)
+            continue
+        stamp, _, rest = f.partition(".")
+        cadence, _, family = rest.partition(".")
+        match = sorted(pathlib.Path(timeslices_folder).glob(f"{stamp}.*.{family}"))
+        if not match:
+            missing.append(f)
+            continue
+        if len(match) > 1:
+            # Two products for one timestamp is not the NWM layout, and picking
+            # by name would silently prefer whichever sorts first. Rare enough to
+            # report every time.
+            LOG.warning(
+                "Ambiguous TimeSlice for %s: %s; using %s",
+                stamp, [m.name for m in match], match[0].name,
+            )
+        else:
+            substituted.append((cadence, match[0].name.partition(".")[2].partition(".")[0]))
+        filenames_existing.append(match[0].name)
 
-    # Assemble a list of existing TimeSlice files, only
-    filenames_existing = [x for x in filenames if x not in drop_list]   
-    
+    if missing:
+        # One line, not one per file: a forecast window lists every future instant
+        # and none of them exists yet.
+        LOG.warning(
+            "%d of %d TimeSlice files missing in %s (%s to %s)", len(missing),
+            len(filenames), timeslices_folder, missing[0], missing[-1],
+        )
+    if substituted:
+        # One line, not one per file: a directory written at another cadence
+        # substitutes EVERY file, on every window, for every arm. Every DISTINCT
+        # pair is named, so a directory that changes product mid-window shows both.
+        pairs = ", ".join(f"{req} -> {used}" for req, used in sorted(set(substituted)))
+        LOG.info(
+            "TimeSlice: %d file(s) matched at a different cadence (%s)",
+            len(substituted), pairs,
+        )
+
     return filenames_existing
 
 def build_forcing_sets(
@@ -209,6 +337,9 @@ def build_forcing_sets(
     nexus_input_folder = forcing_parameters.get("nexus_input_folder", None)
     nts                = forcing_parameters.get("nts", None)
     max_loop_size      = forcing_parameters.get("max_loop_size", 12)
+    if not max_loop_size:  # 0 is the schema's "automatic"
+        max_loop_size = 24
+        LOG.info("max_loop_size not set; using %d forcing file(s) per window.", max_loop_size)
     dt                 = forcing_parameters.get("dt", None)
 
     try:

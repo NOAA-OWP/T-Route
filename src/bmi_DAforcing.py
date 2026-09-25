@@ -103,6 +103,7 @@ class bmi_DAforcing(Bmi):
         'rfc_Datetime',
         'rfc_da_timestep',
         'rfc_timeSteps',
+        'rfc_issue_time',
         'rfc_StationId_array',
         'rfc_StationId_stringLengths',
         'rfc_List_array',
@@ -274,6 +275,7 @@ class bmi_DAforcing(Bmi):
         self._values['rfc_use_rfc'] = self._model._rfc_use_rfc
         self._values['rfc_Datetime'] = self._model._rfc_Datetime
         self._values['rfc_timeSteps'] = self._model._rfc_timeSteps
+        self._values['rfc_issue_time'] = self._model._rfc_issue_time
         self._values['rfc_StationId_array'] = self._model._rfc_StationId_array
         self._values['rfc_StationId_stringLengths'] = self._model._rfc_StationId_stringLengths
         self._values['rfc_List_array'] = self._model._rfc_List_array

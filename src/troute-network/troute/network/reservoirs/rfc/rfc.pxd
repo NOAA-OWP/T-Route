@@ -1,4 +1,5 @@
 cimport numpy as np
+from libc.stdint cimport int64_t
 """
 Declaring C types for RFC Class variables and functions
 """
@@ -9,7 +10,7 @@ cdef void run_rfc_c(_Reach* reach, float inflow, float lateral_inflow, float rou
 
 cdef extern from "rfc_structs.h":
   ctypedef struct _MC_RFC:
-    int lake_number
+    int64_t lake_number
     float dam_length, area, max_depth
     float orifice_area, orifice_coefficient, orifice_elevation
     float weir_coefficient, weir_elevation, weir_length

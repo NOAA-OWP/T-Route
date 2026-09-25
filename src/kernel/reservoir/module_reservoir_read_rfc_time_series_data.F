@@ -13,6 +13,7 @@ module module_reservoir_read_rfc_time_series_data
                                           geth_newdate, &
                                           handle_err
     use netcdf
+    use, intrinsic :: iso_c_binding, only: C_INT64_T
     implicit none
 
     type :: time_series_data_type
@@ -61,7 +62,7 @@ contains
         integer,            intent(in)                  :: forecast_lookback_hours
         integer,            intent(in)                  :: timeslice_offset_hours
         character(len=5),   intent(in)                  :: rfc_gage_id
-        integer,            intent(in)                  :: lake_number
+        integer(C_INT64_T), intent(in)                  :: lake_number
         integer,            intent(out)                 :: lookback_seconds
         integer,            intent(out)                 :: total_counts
         integer,            intent(out)                 :: observed_counts

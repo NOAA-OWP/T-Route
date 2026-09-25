@@ -3,9 +3,10 @@
 /*
     C Structures
 */
+#include <stdint.h>
 #include "../../reach_structs.h"
 typedef struct {
-  int lake_number;
+  int64_t lake_number;
   float dam_length, area, max_depth;
   float orifice_area, orifice_coefficient, orifice_elevation;
   float weir_coefficient, weir_elevation, weir_length;
