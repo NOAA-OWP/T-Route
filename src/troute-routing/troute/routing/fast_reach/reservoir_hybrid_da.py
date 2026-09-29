@@ -1,6 +1,6 @@
 import numpy as np
 import logging
-LOG = logging.getLogger('')
+LOG = logging.getLogger("TROUTE")
 
 def _modify_for_projected_storage(
     inflow, 

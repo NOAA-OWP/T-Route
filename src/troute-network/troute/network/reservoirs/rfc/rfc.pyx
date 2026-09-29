@@ -1,6 +1,7 @@
 cimport numpy as np
 import numpy as np
 from libc.stdlib cimport malloc, free
+from libc.stdint cimport int64_t
 
 from troute.network.reach cimport compute_type, _Reach
 """
@@ -8,18 +9,18 @@ Externally defined symbols
 """
 
 cdef extern from "rfc_structs.c":
-  void init_rfc_reach(_Reach* reach, int lake_number,
+  void init_rfc_reach(_Reach* reach, int64_t lake_number,
                             float dam_length, float area, float max_depth,
                             float orifice_area, float orifice_coefficient, float orifice_elevation,
                             float weir_coefficient, float weir_elevation, float weir_length,
-                            float initial_fractional_depth, float water_elevation,
+                            float initial_fractional_depth, double water_elevation,
                             int reservoir_type, char *reservoir_parameter_file, char *start_date,
                             char *time_series_path, int forecast_lookback_hours
   )
   void free_rfc_reach(_Reach* reach)
-  void route(_Reach* reach, float routing_period, float inflow, float lateral_inflow, float* outflow,  float* water_elevation) nogil
+  void route(_Reach* reach, float routing_period, float inflow, float lateral_inflow, float* outflow,  double* water_elevation) nogil
 
-cdef void run_rfc_c(_Reach* reach, float inflow, float lateral_inflow, float routing_period, float* outflow, float* water_elevation) nogil:
+cdef void run_rfc_c(_Reach* reach, float inflow, float lateral_inflow, float routing_period, float* outflow, double* water_elevation) nogil:
     route(reach, inflow, lateral_inflow, routing_period, outflow, water_elevation)
 
 cdef class MC_RFC(Reach):
@@ -27,7 +28,7 @@ cdef class MC_RFC(Reach):
     MC_Reservoir is a subclass of MC_Reach_Base_Class
   """
 
-  def __init__(self, long id, int lake_number, long[::1] upstream_ids, args, reservoir_type,
+  def __init__(self, int64_t id, int64_t lake_number, int64_t[::1] upstream_ids, args, reservoir_type,
                reservoir_parameter_file, start_date, time_series_path, forecast_lookback_hours):
     """
       Construct the kernel based on passed parameters,
@@ -52,6 +53,7 @@ cdef class MC_RFC(Reach):
             weir_length = args[7]
             initial_fractional_depth  = args[8]
             water_elevation = args[10]
+            dam_length = args[11], the overtopping crest in weir lengths
             reservoir_type
             reservoir_parameter_file
             start_date
@@ -62,10 +64,7 @@ cdef class MC_RFC(Reach):
     # Note Some issues with __calloc__:
     # The python type isn't guaranteed to be properly constructed, so cannot depend on super class being constructured.
     # Thus I don't think we can put these C init functions in __calloc__, at least not in all cases.
-    # init the backing struct, pass a dam_length of 10.0 for now
-
-    #Setting default dam_length to 10
-    dam_length = 10.0
+    dam_length = args[11]
     area = args[0]
     max_depth = args[1]
     orifice_area = args[2]
@@ -102,7 +101,7 @@ cdef class MC_RFC(Reach):
     """
     free_rfc_reach(&self._reach)
 
-  cpdef (float,float) run(self, float inflow, float lateral_inflow, float routing_period):
+  cpdef (float,double) run(self, float inflow, float lateral_inflow, float routing_period):
     """
       Run the rfc routing function
       Params:
@@ -119,7 +118,7 @@ cdef class MC_RFC(Reach):
           reservoir water surface elevation after routing_period seconds
     """
     cdef float outflow = 0.0
-    cdef float water_elevation = 0.0
+    cdef double water_elevation = 0.0
     with nogil:
       route(&self._reach, inflow, lateral_inflow, routing_period, &outflow,  &water_elevation)
       #printf("outflow: %f\n", outflow)

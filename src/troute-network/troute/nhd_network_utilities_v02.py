@@ -10,9 +10,10 @@ import netCDF4
 from joblib import delayed, Parallel
 
 import troute.nhd_io as nhd_io
+from troute.hyfeature_network_utilities import _timeslice_cadence, _timeslice_lead_out
 import troute.nhd_network as nhd_network
 
-LOG = logging.getLogger('')
+LOG = logging.getLogger("TROUTE")
 
 def build_connections(supernetwork_parameters):
     '''
@@ -97,7 +98,7 @@ def build_connections(supernetwork_parameters):
     # map segment ids to waterbody ids
     wbodies = {}
     if "waterbody" in cols:
-        wbodies = nhd_network.extract_waterbody_connections(
+        wbodies = nhd_network._extract_waterbody_connections(
             param_df[["waterbody"]]
         )
         param_df = param_df.drop("waterbody", axis=1)
@@ -190,9 +191,9 @@ def organize_independent_networks(connections, wbody_break_segments, gage_break_
             
         # break reaches at junctions
         else:
-            
-            # reaches will be broken between junctions
-            path_func = partial(nhd_network.split_at_junction, net)
+            # Fast path: dfs_decomposition's path_func=None inlines the
+            # equivalent of ``partial(nhd_network.split_at_junction, net)``.
+            path_func = None
 
         # construct network reaches with depth-first search alg.
         reaches_bytw[tw] = nhd_network.dfs_decomposition(net, path_func)
@@ -239,6 +240,14 @@ def build_channel_initial_state(
             0, index=segment_index, columns=["qu0", "qd0", "h0"], dtype="float32",
         )
   
+    # The kernel's initial-conditions array is four wide (qu0, qd0, h0, ql0) and it
+    # assigns the whole row at once, so a three-column frame fails outright with
+    # "shape mismatch: value array of shape (n,3) could not be broadcast to
+    # indexing result of shape (n,4)". Every branch above predates ql0, which is
+    # why the V3/V4 NHD runs stopped working. Zero is what a cold start means here.
+    if "ql0" not in q0:
+        q0["ql0"] = np.float32(0)
+
     # TODO: If needed for performance improvement consider filtering mask file on read.
     if not segment_index.empty:
         q0 = q0[q0.index.isin(segment_index)]
@@ -255,6 +264,9 @@ def build_forcing_sets(
     qlat_input_folder = forcing_parameters.get("qlat_input_folder", None)
     nts = forcing_parameters.get("nts", None)
     max_loop_size = forcing_parameters.get("max_loop_size", 12)
+    if not max_loop_size:  # 0 is the schema's "automatic"
+        max_loop_size = 24
+        LOG.info("max_loop_size not set; using %d forcing file(s) per window.", max_loop_size)
     dt = forcing_parameters.get("dt", None)
     
     try:
@@ -473,19 +485,53 @@ def _check_timeslice_exists(filenames, timeslices_folder):
     
     """
     
-    # check that all USGS TimeSlice files in the set actually exist
-    drop_list = []
+    # The caller spells the cadence token as 15min because that is the NWM
+    # convention, but the producer writes whatever its observations actually are
+    # (the hourly USGS store writes 60min). Match on the timestamp and the family
+    # and accept any cadence, so an hourly directory is not silently empty.
+    filenames_existing = []
+    substituted = []
+    missing = []
     for f in filenames:
-        try:
-            J = pathlib.Path(timeslices_folder.joinpath(f))     
-            assert J.is_file() == True
-        except AssertionError:
-            LOG.warning("Missing TimeSlice file %s", J)
-            drop_list.append(f)
+        J = pathlib.Path(timeslices_folder).joinpath(f)
+        if J.is_file():
+            filenames_existing.append(f)
+            continue
+        stamp, _, rest = f.partition(".")
+        cadence, _, family = rest.partition(".")
+        match = sorted(pathlib.Path(timeslices_folder).glob(f"{stamp}.*.{family}"))
+        if not match:
+            missing.append(f)
+            continue
+        if len(match) > 1:
+            # Two products for one timestamp is not the NWM layout, and picking
+            # by name would silently prefer whichever sorts first. Rare enough to
+            # report every time.
+            LOG.warning(
+                "Ambiguous TimeSlice for %s: %s; using %s",
+                stamp, [m.name for m in match], match[0].name,
+            )
+        else:
+            substituted.append((cadence, match[0].name.partition(".")[2].partition(".")[0]))
+        filenames_existing.append(match[0].name)
 
-    # Assemble a list of existing TimeSlice files, only
-    filenames_existing = [x for x in filenames if x not in drop_list]   
-    
+    if missing:
+        # One line, not one per file: a forecast window lists every future instant
+        # and none of them exists yet.
+        LOG.warning(
+            "%d of %d TimeSlice files missing in %s (%s to %s)", len(missing),
+            len(filenames), timeslices_folder, missing[0], missing[-1],
+        )
+    if substituted:
+        # One line, not one per file: a directory written at another cadence
+        # substitutes EVERY file, on every window, for every arm. Every DISTINCT
+        # pair is named, so a directory that changes product mid-window shows both.
+        pairs = ", ".join(f"{req} -> {used}" for req, used in sorted(set(substituted)))
+        LOG.info(
+            "TimeSlice: %d file(s) matched at a different cadence (%s)",
+            len(substituted), pairs,
+        )
+
     return filenames_existing
 
 def build_da_sets(da_params, run_sets, t0):
@@ -531,8 +577,17 @@ def build_da_sets(da_params, run_sets, t0):
     streamflow_da = da_params.get('streamflow_da', False)
     if streamflow_da:
         nudging = streamflow_da.get('streamflow_nudging', False)
-        
-    if not usgs_da and not usace_da and not nudging:
+
+    # The simple-scaling DA is a THIRD consumer of the USGS TimeSlices, and it does not
+    # require nudging to be on. Without it here, a scaling-DA-only config produced
+    # da_sets entries with no 'usgs_timeslice_files' key, and the DA silently ran with
+    # no observations -- a full, plausible, exit-0 run that was actually a control.
+    scaling = bool(streamflow_da) and streamflow_da.get('streamflow_scaling', False)
+
+    # The diversion reads its gage from the TimeSlices on its own, nudging or not.
+    diversion = bool((da_params.get('diversion_da') or {}).get('diversion_gage_crosswalk'))
+
+    if not usgs_da and not usace_da and not nudging and not scaling and not diversion:
         # if all DA capabilities are OFF, return empty dictionary
         da_sets = [{} for _ in run_sets]
     
@@ -550,13 +605,17 @@ def build_da_sets(da_params, run_sets, t0):
         if usace_timeslices_folder:
             usace_timeslices_folder = pathlib.Path(usace_timeslices_folder)
         
+        # Measured, not assumed. Shares the helper with the -V5/NHF copy of
+        # build_da_sets so the two cannot drift. Falls back to 15 minutes, the
+        # canonical NWM cadence this path assumed.
+        dt_timeslice = _timeslice_cadence(
+            usgs_timeslices_folder or usace_timeslices_folder
+        )
+
         # the number of timeslice files appended to the front- and back-ends
         # of the TimeSlice file interpolation stack
         pad_hours = da_params.get("timeslice_lookback_hours",0)
-        timeslice_pad = pad_hours * 4 # number of 15 minute TimeSlices in the pad
-
-        # timedelta of TimeSlice data - typically 15 minutes
-        dt_timeslice = timedelta(minutes = 15)
+        timeslice_pad = int(round(pad_hours * 3600 / dt_timeslice.total_seconds()))
 
         da_sets = [] # initialize list to store TimeSlice set lists
 
@@ -565,17 +624,19 @@ def build_da_sets(da_params, run_sets, t0):
             
             # Append an empty dictionary to the loop, which be used to hold
             # lists of USGS and USACE TimeSlice files.
-            da_sets.append({})
+            # The window's length, so the diversion fill can extend its row onto the
+            # routing grid without knowing the run's total.
+            da_sets.append({'nts': set_dict.get('nts')})
 
             # timestamps of TimeSlice files desired for run set i
             timestamps = pd.date_range(
                 t0 - dt_timeslice * timeslice_pad,
-                run_sets[i]['final_timestamp'] + dt_timeslice * 4,
+                run_sets[i]['final_timestamp'] + _timeslice_lead_out(dt_timeslice),
                 freq=dt_timeslice
             )
 
             # identify available USGS TimeSlices in run set i
-            if (usgs_timeslices_folder and nudging) or (usgs_timeslices_folder and usgs_da):
+            if usgs_timeslices_folder and (nudging or usgs_da or scaling or diversion):
                 filenames_usgs = (timestamps.strftime('%Y-%m-%d_%H:%M:%S') 
                             + '.15min.usgsTimeSlice.ncdf').to_list()
                 

@@ -8,12 +8,12 @@ version = "0.0.0"
 dependencies = [
     "deprecated",
     "geopandas",
-    "fiona",
     "joblib",
     "netcdf4",
     "numpy",
     "pandas",
     "pyarrow",
+    "pyogrio",
     "pyyaml",
     "toolz",
     "typing_extensions",

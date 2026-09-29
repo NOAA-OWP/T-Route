@@ -449,7 +449,8 @@ compute_parameters:
         nts:
         # ---------------
         # maximum number of forcing files per loop.
-        # optional, defaults to 12, parameter not used if qlat_forcing_sets exists
+        # optional, defaults to 0 = sized automatically from available memory and the
+        # DA span; parameter not used if qlat_forcing_sets exists
         max_loop_size:
         # ---------------
         # field name of segment ID in qlateral data

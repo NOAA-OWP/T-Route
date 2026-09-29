@@ -3,6 +3,8 @@ import json
 import sys
 import math
 import pathlib
+import re
+from typing import Any
 import logging
 from datetime import *
 import time
@@ -19,8 +21,9 @@ import dateutil.parser as dparser
 from datetime import datetime, timedelta
 
 from troute.nhd_network import reverse_dict
+from troute.network_fingerprint import FINGERPRINT_KEY
 
-LOG = logging.getLogger('')
+LOG = logging.getLogger("TROUTE")
 
 def read_netcdf(geo_file_path):
     '''
@@ -845,7 +848,7 @@ def read_netcdfs(paths, dim, transform_func=None):
 
     datasets = [process_one_path(p) for p in paths]
     combined = xr.concat(datasets, dim, combine_attrs = "override")
-    return combined
+    return combined    
 
 
 def preprocess_time_station_index(xd):
@@ -1047,6 +1050,57 @@ def get_usgs_df_from_csv(usgs_csv, routelink_subset_file, index_col="link"):
     return usgs_df
 
 
+# What the streamflow ingestion writes: <center>.<cadence>min.usgsTimeSlice.ncdf
+_TIMESLICE_CADENCE = re.compile(r"\.(\d+)min\.")
+
+
+def _whole_minutes(label: str, declared: Any) -> int:
+    """A declared cadence in whole minutes, refusing anything int() would truncate."""
+    minutes = float(declared)
+    if not minutes.is_integer():
+        msg = (
+            f"{label} declares a {minutes} min cadence. Cadences are whole minutes; a "
+            "fractional one would be truncated and read at the wrong rate."
+        )
+        raise ValueError(msg)
+    return int(minutes)
+
+
+def _check_timeslice_cadence(name: str, declared: Any) -> None:
+    """Cross-check a TimeSlice's cadence, the way the RFC reader checks its own.
+
+    The observations are resampled onto the model timestep with no reference to this,
+    so a file that is not the cadence it claims is read at the wrong rate silently.
+    Files written before the attribute existed carry no cadence to check against, and
+    are left alone rather than rejected.
+    """
+    if declared is None:
+        return
+    attr_minutes = _whole_minutes(f"streamflow DA: {name}", declared)
+    from_name = _TIMESLICE_CADENCE.search(name)
+    if from_name is None:
+        msg = (
+            f"streamflow DA: {name} carries no cadence token in its filename, so the "
+            "cadence cannot be cross-checked against the file's own attributes."
+        )
+        raise ValueError(msg)
+    name_minutes = int(from_name.group(1))
+    if attr_minutes <= 0 or name_minutes != attr_minutes:
+        msg = (
+            f"streamflow DA: {name} disagrees about its own cadence -- filename says "
+            f"{name_minutes} min, sliceTimeResolutionMinutes says {attr_minutes} min."
+        )
+        raise ValueError(msg)
+    if 60 % attr_minutes:
+        # The ingestion's rule, shared with the RFC product.
+        msg = (
+            f"streamflow DA: {name} has a {attr_minutes} min cadence, which does not "
+            "divide 60. The observation retrieval only writes cadences that divide 60 "
+            "with no remainder."
+        )
+        raise ValueError(msg)
+
+
 def _read_timeslice_file(f):
 
     with netCDF4.Dataset(
@@ -1054,7 +1108,14 @@ def _read_timeslice_file(f):
         mode = 'r',
         format = "NETCDF4"
     ) as ds:
-        
+
+        # getncattr, not __dict__: reading one attribute cannot be spoiled by an
+        # unrelated one that fails to decode.
+        declared = (
+            ds.getncattr('sliceTimeResolutionMinutes')
+            if 'sliceTimeResolutionMinutes' in ds.ncattrs() else None
+        )
+        _check_timeslice_cadence(pathlib.Path(f).name, declared)
         discharge = ds.variables['discharge'][:].filled(fill_value = np.nan)
         stns      = ds.variables['stationId'][:].filled(fill_value = np.nan)
         t         = ds.variables['time'][:].filled(fill_value = np.nan)
@@ -1064,6 +1125,7 @@ def _read_timeslice_file(f):
         stationId = np.apply_along_axis(''.join, 1, stns.astype(str))
         time_str = np.apply_along_axis(''.join, 1, t.astype(str))
         stationId = np.char.strip(stationId)
+        stationId = np.char.rstrip(stationId, "n")
         
         timeslice_observations = (pd.DataFrame({
                                     'stationId' : stationId,
@@ -1086,10 +1148,14 @@ def _read_timeslice_file(f):
     return timeslice_observations, observation_quality
 
 def _interpolate_one(df, interpolation_limit, frequency):
-    
-    interp_out = (df.resample('min').
+
+    # Interpolate on the finest grid the minute-based limit and the target step share,
+    # so a target that is not whole minutes still gets values rather than NaN.
+    step_seconds = int(pd.Timedelta(frequency).total_seconds())
+    base_seconds = math.gcd(60, step_seconds) or 60
+    interp_out = (df.resample(f'{base_seconds}s').
                         interpolate(
-                            limit = interpolation_limit, 
+                            limit = interpolation_limit * (60 // base_seconds),
                             limit_direction = 'both'
                         ).
                         resample(frequency).
@@ -1107,7 +1173,8 @@ def get_obs_from_timeslices(
     interpolation_limit,
     frequency_secs,
     t0,
-    cpu_pool, 
+    cpu_pool,
+    zero_is_missing=True,
 ):
     """
     Read observations from TimeSlice files, interpolate available observations
@@ -1136,6 +1203,12 @@ def get_obs_from_timeslices(
     
     - cpu_pool                      (int): Number of CPUs used for parallel 
                                            TimeSlice reading and interolation
+
+    - zero_is_missing              (bool): Treat a zero observation as missing. A
+                                           stream gage reading zero is an outage;
+                                           a reservoir releasing zero has its
+                                           outlets closed, so reservoir DA passes
+                                           False.
     
     Returns
     -------
@@ -1180,6 +1253,7 @@ def get_obs_from_timeslices(
       
     # Link <> gage crosswalk data
     df = crosswalk_df.reset_index()
+    df = df.drop(columns="index", errors="ignore")
     df[crosswalk_gage_field] = np.asarray(df[crosswalk_gage_field]).astype('<U15')
     df = df.set_index(crosswalk_gage_field)
     df.index = df.index.str.strip()
@@ -1202,9 +1276,10 @@ def get_obs_from_timeslices(
                           )
 
     # screen-out poor quality flow observations
+    invalid = observation_df <= 0 if zero_is_missing else observation_df < 0
     observation_df = (observation_df.
                       mask(observation_qual_df < qc_threshold, np.nan).
-                      mask(observation_df <= 0, np.nan)
+                      mask(invalid, np.nan)
                      )
 
     # ---- Interpolate USGS observations to the input frequency (frequency_secs)
@@ -1213,11 +1288,25 @@ def get_obs_from_timeslices(
         observation_df_T.index, format = "%Y-%m-%d_%H:%M:%S"  # index variable as type datetime
     )
     
-    # specify resampling frequency 
-    frequency = str(int(frequency_secs/60))+"min"    
+    # Seconds, not truncated minutes: truncation puts a dt that is not whole minutes
+    # on the wrong grid, and any dt under 60 s on no grid at all.
+    frequency = f"{int(frequency_secs)}s"
     
     # interpolate and resample frequency
     buffer_df = observation_df_T.resample(frequency).asfreq()
+
+    # No column means the crosswalk matched no gage in this domain, which is an
+    # ordinary outcome for a small subset. The interpolation loop below then builds
+    # no chunks and np.concatenate raised "need at least one array to concatenate",
+    # taking the whole run down instead of reporting that there is nothing to
+    # assimilate. The all-empty-timeslice case above already returns this way.
+    if observation_df_T.shape[1] == 0:
+        LOG.debug(
+            "%s crosswalk matched no gage in the timeslice files; returning an empty "
+            "observation frame.", crosswalk_dest_field,
+        )
+        return pd.DataFrame()
+
     with Parallel(n_jobs=cpu_pool) as parallel:
         
         jobs = []
@@ -1430,6 +1519,14 @@ def get_channel_restart_from_wrf_hydro(
     return q_initial_states
 
 
+# The lite waterbody restart is indexed by the hydrofabric lake id under this name,
+# which tells it apart from NHF's positional index (nhf_lake_id). The BMI forcing module
+# reads the pickle positionally, so it carries only qd0 and h0.
+WBODY_RESTART_ID_FIELD = "lake_id"
+# Mirrors nhf_preprocess.RECORD_LAKE_ID_FIELD; test_waterbody_restart_key pins it.
+WBODY_RECORD_ID_FIELD = "og_nhf_lake_id"
+
+
 def read_lite_restart(
     file
 ):
@@ -1456,10 +1553,11 @@ def read_lite_restart(
     
 
 def write_lite_restart(
-    q0, 
-    waterbodies_df, 
-    t0, 
-    restart_parameters
+    q0,
+    waterbodies_df,
+    t0,
+    restart_parameters,
+    fingerprint=None,
 ):
     '''
     Save initial conditions dataframes as pickle files
@@ -1489,14 +1587,26 @@ def write_lite_restart(
         
         q0_out = q0.copy()
         q0_out['time'] = t0
+        q0_out.attrs[FINGERPRINT_KEY] = fingerprint
         q0_out.to_pickle(pathlib.Path.joinpath(output_path, channel_restart_filename))
         LOG.debug('Dropped lite channel restart file %s' % pathlib.Path.joinpath(output_path, channel_restart_filename))
 
         if not waterbodies_df.empty:
-            wbody_initial_states = waterbodies_df.loc[:,['qd0','h0']]
+            wbody_initial_states = waterbodies_df.loc[:,['qd0','h0']].copy()
+            # Keyed by the hydrofabric lake id: NHF waterbody ids are positional, so a
+            # dropped lake would load every later lake's state into its neighbor.
+            stable_ids = (
+                waterbodies_df[WBODY_RECORD_ID_FIELD]
+                if WBODY_RECORD_ID_FIELD in waterbodies_df.columns
+                else waterbodies_df.index
+            )
+            wbody_initial_states.index = pd.Index(
+                np.asarray(stable_ids), name=WBODY_RESTART_ID_FIELD
+            )
             wbody_initial_states['time'] = t0
+            wbody_initial_states.attrs[FINGERPRINT_KEY] = fingerprint
             wbody_initial_states.to_pickle(pathlib.Path.joinpath(output_path, waterbody_restart_filename))
-            LOG.debug('Dropped lite waterbody restart file %s' % pathlib.Path.joinpath(output_path, channel_restart_filename))
+            LOG.debug('Dropped lite waterbody restart file %s' % pathlib.Path.joinpath(output_path, waterbody_restart_filename))
         else:
             LOG.debug('No lite waterbody restart file dropped becuase waterbodies are either turned off or do not exist in this domain.')
         
@@ -2052,6 +2162,170 @@ def write_waterbody_netcdf(
                 }
             )
 
+def write_single_waterbody_netcdf(
+    wbdy_filepath: str,
+    i_df: pd.DataFrame,
+    q_df: pd.DataFrame,
+    d_df: pd.DataFrame,
+    waterbodies_df: pd.DataFrame,
+    waterbody_types_df: pd.DataFrame,
+    t0: datetime,
+    dt: int,
+    nts: int,
+    time_index: list[int],
+) -> None:
+    """Write all waterbody results to a single CF-compliant netCDF file.
+
+    Dimensions: time, feature_id.
+    Data variables (time, feature_id): inflow, outflow, water_sfc_elev.
+    Coordinate variables on feature_id: latitude, longitude, reservoir_type.
+
+    Parameters
+    ----------
+    i_df, q_df, d_df : DataFrame
+        Inflow, outflow, and depth with lake IDs as index and timesteps as columns.
+    waterbodies_df : DataFrame
+        Must contain 'lat', 'lon', 'crs' columns indexed by lake ID.
+    waterbody_types_df : DataFrame
+        Must contain 'reservoir_type' column indexed by lake ID.
+    t0 : datetime
+        Simulation reference time.
+    dt : int
+        Timestep duration in seconds.
+    nts : int
+        Total number of timesteps in simulation.
+    time_index : list of int
+        Timestep indices to write (0-based).
+    """
+    netcdfname = 'troute_lakeout_' + t0.strftime('%Y%m%d%H%M') + '.nc'
+    time_units = "minutes since 1970-01-01 00:00:00 UTC"
+
+    wbdy_time = np.array([
+        t0 + timedelta(seconds=int(ti + 1) * dt) for ti in time_index
+    ])
+    num_timesteps = len(wbdy_time)
+
+    if not i_df.empty:
+        waterbodies_df = waterbodies_df[['lat', 'lon', 'crs']].sort_index()
+        waterbody_types_df = waterbody_types_df.sort_index()
+        feature_ids = waterbodies_df.index.to_numpy(dtype='int64')
+        res_types = waterbody_types_df.reservoir_type.to_numpy(dtype='int32')
+        lats = waterbodies_df.lat.to_numpy(dtype='float32')
+        lons = waterbodies_df.lon.to_numpy(dtype='float32')
+
+        # Per-lake, per-timestep arrays: (feature_id, timestep) -> transpose to (time, feature_id)
+        inflow_data = i_df.sort_index().to_numpy(dtype='float32').T
+        outflow_data = q_df.sort_index().to_numpy(dtype='float32').T
+        elev_data = d_df.sort_index().to_numpy(dtype='float32').T
+    else:
+        feature_ids = np.zeros(1, dtype='int64')
+        res_types = np.zeros(1, dtype='int32')
+        lats = np.array([np.nan], dtype='float32')
+        lons = np.array([np.nan], dtype='float32')
+        inflow_data = np.zeros((num_timesteps, 1), dtype='float32')
+        outflow_data = np.zeros((num_timesteps, 1), dtype='float32')
+        elev_data = np.zeros((num_timesteps, 1), dtype='float32')
+
+    with netCDF4.Dataset(
+        filename=str(wbdy_filepath) + '/' + netcdfname,
+        mode='w',
+        format='NETCDF4',
+    ) as f:
+        # Dimensions
+        f.createDimension('time', num_timesteps)
+        f.createDimension('feature_id', len(feature_ids))
+        f.createDimension('reference_time', 1)
+
+        # time
+        v_time = f.createVariable('time', 'f8', ('time',))
+        v_time[:] = date2num(wbdy_time, units=time_units, calendar='standard')
+        v_time.setncatts({
+            'long_name': 'valid output time',
+            'standard_name': 'time',
+            'units': time_units,
+        })
+
+        # reference_time
+        v_ref = f.createVariable('reference_time', 'f8', ('reference_time',))
+        v_ref[:] = date2num(t0, units=time_units, calendar='standard')
+        v_ref.setncatts({
+            'long_name': 'model initialization time',
+            'standard_name': 'forecast_reference_time',
+            'units': time_units,
+        })
+
+        # feature_id
+        v_fid = f.createVariable('feature_id', 'i8', ('feature_id',))
+        v_fid[:] = feature_ids
+        v_fid.setncatts({
+            'long_name': 'Lake ComID',
+            'cf_role': 'timeseries_id',
+        })
+
+        # latitude (coordinate on feature_id)
+        v_lat = f.createVariable('latitude', 'f4', ('feature_id',), fill_value=np.nan)
+        v_lat[:] = lats
+        v_lat.setncatts({
+            'long_name': 'Lake latitude',
+            'standard_name': 'latitude',
+            'units': 'degrees_north',
+        })
+
+        # longitude (coordinate on feature_id)
+        v_lon = f.createVariable('longitude', 'f4', ('feature_id',), fill_value=np.nan)
+        v_lon[:] = lons
+        v_lon.setncatts({
+            'long_name': 'Lake longitude',
+            'standard_name': 'longitude',
+            'units': 'degrees_east',
+        })
+
+        # reservoir_type
+        v_rtype = f.createVariable('reservoir_type', 'i4', ('feature_id',))
+        v_rtype[:] = res_types
+        v_rtype.setncatts({
+            'long_name': 'reservoir type',
+            'flag_values': np.array([1, 2, 3, 4], dtype='int32'),
+            'flag_meanings': 'level_pool USGS_persistence USACE_persistence RFC_forecasts',
+        })
+
+        # inflow (time, feature_id)
+        v_in = f.createVariable('inflow', 'f4', ('time', 'feature_id'), fill_value=np.nan)
+        v_in[:] = inflow_data
+        v_in.setncatts({
+            'long_name': 'Lake Inflow',
+            'units': 'm3 s-1',
+            'coordinates': 'latitude longitude',
+        })
+
+        # outflow (time, feature_id)
+        v_out = f.createVariable('outflow', 'f4', ('time', 'feature_id'), fill_value=np.nan)
+        v_out[:] = outflow_data
+        v_out.setncatts({
+            'long_name': 'Lake Outflow',
+            'units': 'm3 s-1',
+            'coordinates': 'latitude longitude',
+        })
+
+        # water_sfc_elev (time, feature_id)
+        v_elev = f.createVariable('water_sfc_elev', 'f4', ('time', 'feature_id'), fill_value=np.nan)
+        v_elev[:] = elev_data
+        v_elev.setncatts({
+            'long_name': 'Water Surface Elevation',
+            'units': 'm',
+            'coordinates': 'latitude longitude',
+            'comment': 'Invalid when reservoir_type = 4 (RFC); value corresponds to level pool only',
+        })
+
+        # Global attributes
+        f.setncatts({
+            'Conventions': 'CF-1.6',
+            'featureType': 'timeSeries',
+            'title': 'T-Route Waterbody Output',
+            'model_initialization_time': t0.strftime('%Y-%m-%d_%H:%M:%S'),
+            'model_output_type': 'reservoir',
+            'model_total_valid_times': nts,
+        })
 
 def write_flowveldepth_csv_pkl(stream_output_directory, file_name,
                               flow, velocity, depth, nudge_df, timestamps,
@@ -2206,7 +2480,13 @@ def write_flowveldepth_netcdf(stream_output_directory, file_name,
             {
                 'long_name': 'Depth',
                 'units': 'm',
-                'missing_value': -9999.0
+                'missing_value': -9999.0,
+                # On a flowpath a reservoir occupies, this is stage above the outlet
+                # invert, not depth to the bed. See _convert_waterbody_depth.
+                'comment': (
+                    'channel flow depth; on reservoir features, water surface '
+                    'height above the orifice invert'
+                ),
             }
         )
         
@@ -2390,9 +2670,18 @@ def write_flowveldepth(
         # Drop the first column
         nudge = nudge[:, 1:]
     nudge_df = pd.DataFrame(data=nudge, index=usgs_positions_id).iloc[:,ind]
-    empty_ids = list(set(flowveldepth.index).difference(set(nudge_df.index)))
-    empty_df = pd.DataFrame(index=empty_ids, columns=nudge_df.columns).fillna(-9999.0)
-    nudge_df = pd.concat([nudge_df, empty_df]).loc[flowveldepth.index]
+    pd.set_option('future.no_silent_downcasting', True)
+    # updated_flowveldepth has already made the index a (featureID, Type) MultiIndex,
+    # so matching nudge on it directly never overlapped and every gage row was replaced
+    # by the fill value. Line the two up on featureID.
+    feature_ids = (
+        flowveldepth.index.get_level_values("featureID")
+        if isinstance(flowveldepth.index, pd.MultiIndex)
+        else flowveldepth.index
+    )
+    nudge_df = nudge_df[~nudge_df.index.duplicated(keep="first")].reindex(feature_ids)
+    nudge_df = nudge_df.fillna(-9999.0)
+    nudge_df.index = flowveldepth.index
     file_name_time = t0
     jobs = []
     

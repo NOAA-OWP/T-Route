@@ -134,6 +134,10 @@ def _bmi_disassemble_rfc_timeseries (dataFrame, timeRef):
     # Convert into numpy array
     rfc_Datetime = np.array(DatetimeListSeconds)
     rfc_timeSteps = np.array(timeStepsListSeconds)
+    # The horizon is measured from the issue, so it has to cross the transport too.
+    rfc_issue_time = np.array(
+        [int((d - timeRef).total_seconds()) for d in dataFrame["issue_time"].tolist()]
+    )
   
     # String entries: two arrays:
     #   1st array: conversion of entries into ASCII code
@@ -146,7 +150,8 @@ def _bmi_disassemble_rfc_timeseries (dataFrame, timeRef):
 
     return (rfc_da_timestep, rfc_totalCounts, rfc_synthetic_values, rfc_discharges, \
             rfc_timeseries_idx, rfc_use_rfc, rfc_Datetime, rfc_timeSteps, rfc_StationId_array, \
-            rfc_StationId_stringLengths, rfc_List_array, rfc_List_stringLengths)
+            rfc_StationId_stringLengths, rfc_List_array, rfc_List_stringLengths, \
+            rfc_issue_time)
 
 
 def _bmi_disassemble_lite_restart (dataFrame, dataType):

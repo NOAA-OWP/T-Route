@@ -1,0 +1,73 @@
+# uv run python -m nwm_routing -f -V4 taylor_dam.yaml
+#--------------------------------------------------------------------------------
+log_parameters:
+    #----------
+    showtiming: True
+    log_level : INFO
+#--------------------------------------------------------------------------------
+network_topology_parameters:
+    #----------
+    supernetwork_parameters:
+        #----------
+        network_type: HYFeaturesNetwork 
+        geo_file_path: domain/09112500.gpkg
+        columns: 
+            key: 'id'
+            downstream: 'to'
+            dx : 'Length_m'
+            n : 'n'
+            ncc : 'nCC'
+            s0 : 'So'
+            bw : 'BtmWdth'
+            waterbody : 'WaterbodyID'
+            gages : 'gage'
+            tw : 'TopWdth'
+            twcc : 'TopWdthCC'
+            musk : 'MusK'
+            musx : 'MusX'
+            cs : 'ChSlp'
+            alt: 'alt'
+            lake_id: 'lake_id'
+            mainstem: 'mainstem'
+    waterbody_parameters:
+      #----------
+        break_network_at_waterbodies: True
+#--------------------------------------------------------------------------------
+compute_parameters:
+    #----------
+    parallel_compute_method: by-subnetwork-jit-clustered #serial 
+    compute_kernel         : V02-structured
+    assume_short_ts        : True
+    subnetwork_target_size : 10000
+    cpu_pool               : 1
+    restart_parameters:
+        #----------
+        start_datetime: "2022-08-02 00:00:00"
+    forcing_parameters:
+        #----------
+        qts_subdivisions            : 12
+        dt                          : 300 # [sec]
+        qlat_input_folder           : channel_forcing/qlat/
+        qlat_file_pattern_filter    : "*NEXOUT.parquet"
+        nts                         : 2304 #288 for 1day THIS HAS TO MATCH THE SIMULATION TIME PERIOD
+        max_loop_size               : 288 # [hr]  
+    data_assimilation_parameters:
+        streamflow_da:
+    #        #----------
+            streamflow_nudging            : False
+            diffusive_streamflow_nudging  : False
+        reservoir_da:
+            #----------
+            reservoir_persistence_da:
+                #----------
+                reservoir_persistence_usgs  : False
+            reservoir_rfc_da:
+                #----------
+                reservoir_rfc_forecasts: False
+#--------------------------------------------------------------------------------
+output_parameters:
+  stream_output:
+      stream_output_directory: output/base_output/
+      stream_output_time: -1 # [hr]
+      stream_output_type: '.nc'
+      stream_output_internal_frequency: 60

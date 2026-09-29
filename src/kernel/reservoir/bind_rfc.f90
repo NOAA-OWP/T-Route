@@ -29,33 +29,32 @@ contains
         orifice_area, lake_max_water_elevation, initial_fractional_depth, &
         lake_number, reservoir_type, reservoir_parameter_file, start_date, &
         time_series_path, forecast_lookback_hours) BIND(C, NAME='init_rfc')
-            USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_F_POINTER, C_CHAR, c_null_char
+            USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_F_POINTER, C_CHAR, c_null_char, C_INT64_T, C_DOUBLE
             TYPE(C_PTR), INTENT(IN), VALUE :: handle
-            real,    intent(inout) :: water_elevation           ! meters AMSL
+            real(C_DOUBLE), intent(inout) :: water_elevation ! meters AMSL
             real,    intent(in)    :: lake_area                 ! area of lake (km^2)
             real,    intent(in)    :: weir_elevation            ! bottom of weir elevation (meters AMSL)
             real,    intent(in)    :: weir_coeffecient          ! weir coefficient
             real,    intent(in)    :: weir_length               ! weir length (meters)
-            real,    intent(in)    :: dam_length                ! dam length (meters)
+            real,    intent(in)    :: dam_length                ! dam length, a multiplier on weir length
             real,    intent(in)    :: orifice_elevation         ! orifice elevation (meters AMSL)
             real,    intent(in)    :: orifice_coefficient       ! orifice coefficient
             real,    intent(in)    :: orifice_area              ! orifice area (meters^2)
             real,    intent(in)    :: lake_max_water_elevation  ! max water elevation (meters)
             real,    intent(in)    :: initial_fractional_depth  ! initial fraction water depth
-            integer, intent(in)    :: lake_number               ! lake number
+            integer(C_INT64_T), intent(in) :: lake_number               ! lake number
             integer, intent(in)    :: reservoir_type            ! reservoir type
             character(kind=c_char), dimension(*), intent(IN) :: reservoir_parameter_file
             character(kind=c_char), dimension(*), intent(IN) :: start_date
             character(kind=c_char), dimension(*), intent(IN) :: time_series_path
             integer,            intent(in) :: forecast_lookback_hours
 
-            type (rfc_forecasts), POINTER :: rfc_ptr ! ptr to rfc object
-
             character(len=256) :: reservoir_parameter_file_F
             character(len=256) :: start_date_F
             character(len=256) :: time_series_path_F
 
             integer :: char_index, nchars_reservoir_parameter_file, nchars_start_date, nchars_time_series_path
+            type (rfc_forecasts), POINTER :: rfc_ptr ! ptr to rfc object
         
             ! Use fortran calls to go find certain things like null_char instead of using this loop every time
             ! Look up more about converting char array to string
@@ -102,12 +101,12 @@ contains
 
         SUBROUTINE run_rfc(handle, inflow, lateral_inflow, water_elevation, outflow, routing_period) BIND(C, NAME='run_rfc')
 
-            USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_F_POINTER, C_CHAR, C_LOC, C_NULL_CHAR
+            USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_F_POINTER, C_CHAR, C_LOC, C_NULL_CHAR, C_DOUBLE
 
             TYPE(C_PTR), INTENT(IN), VALUE :: handle
             real, intent(in)    :: inflow                   ! cubic meters per second (cms)
             real, intent(in)    :: lateral_inflow           ! cubic meters per second (cms)
-            real, intent(inout) :: water_elevation          ! meters AMSL
+            real(C_DOUBLE), intent(inout) :: water_elevation ! meters AMSL
             real, intent(out)   :: outflow                  ! cubic meters per second (cms)
             real, intent(in)    :: routing_period           ! seconds
             integer :: dynamic_reservoir_type               ! dynamic reservoir type sent to lake out files

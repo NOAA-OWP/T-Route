@@ -119,11 +119,12 @@ def _bmi_reassemble_rfc_timeseries (rfc_da_timestep, rfc_totalCounts, \
                 rfc_synthetic_values, rfc_discharges, rfc_timeseries_idx, \
                 rfc_use_rfc, rfc_Datetime, rfc_timeSteps, rfc_StationId_array, \
                 rfc_StationId_stringLengths, rfc_List_array, \
-                rfc_List_stringLengths, timeRef):
+                rfc_List_stringLengths, timeRef, rfc_issue_time=None):
 
     # Create empty dataframe with appropriate column names
     columnList = ['stationId','discharges','synthetic_values','totalCounts',\
-                  'timeSteps','Datetime','timeseries_idx','file','use_rfc','da_timestep']
+                  'timeSteps','Datetime','timeseries_idx','file','use_rfc','da_timestep',\
+                  'issue_time']
     
     # Build up dataframe
     dataFrame = pd.DataFrame()
@@ -150,7 +151,11 @@ def _bmi_reassemble_rfc_timeseries (rfc_da_timestep, rfc_totalCounts, \
         elif (col == 'use_rfc'):
             addedCol = [bool(d) for d in rfc_use_rfc]
         elif (col == 'da_timestep'):
-            addedCol = rfc_da_timestep      
+            addedCol = rfc_da_timestep
+        elif (col == 'issue_time'):
+            if rfc_issue_time is None:
+                continue
+            addedCol = [(timedelta(seconds=d)+timeRef) for d in rfc_issue_time.tolist()]
         # add the selected column
         dataFrame[col] = addedCol
 

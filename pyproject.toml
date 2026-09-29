@@ -1,0 +1,184 @@
+[project]
+name = "troute_project"
+authors = [
+    {name = "DongHa Kim", email = "dongha.kim@noaa.gov"},
+    {name = "Sean Horvath", email = "sean.horvath@noaa.gov"},
+    {name = "Amin Torabi", email = "amin.torabi@noaa.gov"},
+    {name = "Zach Jurgen", email = "jurgen.zach@noaa.gov"},
+    {name = "Austin Raney", email = "austin.raney@noaa.gov"},
+]
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[project.optional-dependencies]
+test = [
+    "pytest==8.3.2",
+    # 2.0.0 is sdist-only (its versioneer build uses the removed
+    # configparser.SafeConfigParser); 2.0.1 ships a py3-none-any wheel.
+    "bmipy==2.0.1",
+    "xarray",
+    "fsspec~=2025.10.0",
+    "dataretrieval~=1.1.2",
+    "s3fs~=2025.10.0",
+]
+
+jupyter = [
+    "contextily==1.6.0",
+    "matplotlib>=3.7.0,<3.8.0",
+    "ipykernel>=6.29.0,<7.0.0",
+    "ipywidgets>=8.0.0,<9.0.0",
+    "jupyterlab>=3.6.7,<4.0.0",
+    "xarray>=2024.1.1",
+    "matplotlib-inline>=0.1.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+addopts = "--continue-on-collection-errors"
+markers = [
+    "integration: end-to-end NHF model runs (require preprocessed data; run with -m integration)",
+    "endtoend: full nwm_routing CLI runs on the committed LowerColorado data (no external data needed)",
+]
+filterwarnings = [
+    # Third-party warnings, nothing in t-route can act on it.
+    "ignore:The 'nwis' services are deprecated:DeprecationWarning:dataretrieval",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [ ".pixi", "__pycache__" ]
+lint.select = [ "ALL" ]
+# Adopted from https://github.com/python-attrs/attrs/blob/main/pyproject.toml
+lint.ignore = [
+  "ANN",     # pyright is better at this
+  "ARG",     # unused arguments are normal when implementing interfaces
+  "B905",    # zip without strict is fine in Python 3.11+
+  "COM",     # ruff format takes care of our commas
+  "D",       # we prefer our own docstring style
+  "E501",    # leave line-length enforcement to ruff format
+  "FBT",     # we don't hate bool args around here
+  "ISC001",  # conflicts with ruff format
+  "N",       # we need more naming freedom
+  "PLC0415", # sometimes, imports have to live elsewhere
+  "PLR0913", # yes, many arguments, but most have defaults
+  "PLR2004", # numbers are sometimes fine
+  "TC001",   # first-party typing-only imports are cheap, keep simple for docs
+  "TC003",   # stdlib typing-only imports are cheap, keep simple for docs
+  "TRY301",  # raising within try/except is fine for us
+]
+lint.per-file-ignores."src/troute-nwm/src/nwm_routing/scaling_da_apply.py" = [
+  # Hoisting try messages into constants or exception classes separates the story from the raise.
+  "TRY003", "EM101", "EM102",
+  # Long functions are fine for the kernel orchestration
+  "C901", "PLR0912", "PLR0915",
+]
+lint.per-file-ignores."src/troute-network/troute/scaling_da/*.py" = [
+  "C901",
+  "TRY003", "EM101", "EM102",
+]
+lint.per-file-ignores."src/troute-network/troute/job_memory.py" = [
+  # `troute` is a namespace package shared by every distribution in src/; an
+  # __init__.py here would shadow troute.config, troute.routing and the rest.
+  "INP001",
+]
+lint.per-file-ignores."src/troute-network/troute/network_fingerprint.py" = [
+  # `troute` is a namespace package shared by every distribution in src/; an
+  # __init__.py here would shadow troute.config, troute.routing and the rest.
+  "INP001",
+]
+lint.per-file-ignores."src/troute-network/troute/window_plan.py" = [
+  # `troute` is a namespace package shared by every distribution in src/; an
+  # __init__.py here would shadow troute.config, troute.routing and the rest.
+  "INP001",
+]
+lint.per-file-ignores."src/troute-routing/troute/routing/fast_reach/scaling_da.py" = [
+  "TRY003", "EM101", "EM102",
+  "C901", "PLR0912", "PLR0915",
+  # a module-level bool with `global` is the plainest warn-once
+  "PLW0603",
+]
+lint.per-file-ignores."doc/**/*.py" = [
+  "A001",   # shadowing builtins like `license` is fine for file paths
+  "INP001", # no need for init files in docs
+]
+lint.per-file-ignores."doc/**/*.{py,ipynb}" = [
+  # notebook-generated files
+  "B018",
+  "D100",
+  # notebook cells naturally introduce imports mid-file
+  "E402",
+  # we have commented-out code in notebook headers
+  "ERA001",
+  # demo notebooks print their results; keep the print calls
+  "T201",
+]
+lint.per-file-ignores."test/**/*.py" = [
+  "CPY001",  # the repo carries no copyright notices
+  "B015",    # pointless comparison in tests aren't pointless
+  "B017",    # pytest.raises(Exception) is fine
+  "B018",    # pointless expressions in tests aren't pointless
+  "BLE001",  # Blind excepts are fine in tests
+  "DTZ",     # datetime best practices don't matter in tests
+  "EM",      # no need for exception msg hygiene in tests
+  "INP001",  # no need for init files in tests
+  "PLR0124", # pointless comparison in tests aren't pointless
+  "PT011",   # broad is fine
+  "PT012",   # sometimes we need more than a single stmt
+  "RUF012",  # we don't do ClassVar annotations in tests
+  "S",       # security concerns don't matter in tests
+  "SIM201",  # sometimes we need to check `not ==`
+  "SIM202",  # sometimes we need to check `not ==`
+  "SIM300",  # Yoda rocks in asserts
+  # Tests reach into private helpers deliberately. The routing kernels and the tree builders
+  # keep their units private, so pinning them through the public API alone would leave most of
+  # the arithmetic untested.
+  # TODO: re-enable SLF001 globally once the t-route refactor starts. At that point the
+  # private/public boundary is the thing being changed, and tests welded to internals stop
+  # being a safety net and become the obstacle to changing them.
+  "SLF001",
+  "TRY",     # exception best practices don't matter in tests
+]
+lint.extend-safe-fixes = [
+  # module level imports
+  "E402",
+  # break down assert
+  "PT018",
+  # absolute imports
+  "TID252",
+]
+lint.isort.known-first-party = [
+  "troute",
+]
+lint.isort.required-imports = [ "from __future__ import annotations" ]
+lint.pydocstyle.convention = "numpy"
+
+[tool.codespell]
+ignore-words-list = "PERVIOUS,gage,gages,Carrer,anc,pervious"
+skip = "*.inp,*.lock,.pixi/*,*.ipynb"
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+include = [ "src", "test/nhf/old_river/notebook_utils.py" ]
+extraPaths = [ "src/troute-config" ]
+ignore = [
+  "docs/*.py",
+  "tests/*.py",
+]
+# Third-party libs in scientific Python often lack complete stubs
+reportMissingTypeStubs = false
+reportUnknownArgumentType = false
+reportUnknownLambdaType = false
+reportUnknownMemberType = false
+reportUnknownParameterType = false
+reportUnknownVariableType = false
+
+[tool.fortitude]
+include = ["src/**/*.f90"]
+
+[tool.fortitude.check]
+ignore = ["S001", "S101", "S241", "MOD021", "S231", "C003", "C131"]
+line-length = 120

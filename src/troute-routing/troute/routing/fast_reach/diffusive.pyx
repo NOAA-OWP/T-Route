@@ -50,10 +50,12 @@ cdef void diffnw(
         double[:,:,:] out_depth,
 ):
 
+    # Zeroed, not np.empty: handed to Fortran, so whatever it skips would be
+    # published as junk. The kernel zeroes them today; this is so that need not.
     cdef:
-        double[::1,:,:] q_ev_g     = np.empty([ntss_ev_g,mxncomp_g,nrch_g], dtype = np.double, order = 'F')
-        double[::1,:,:] elv_ev_g   = np.empty([ntss_ev_g,mxncomp_g,nrch_g], dtype = np.double, order = 'F')
-        double[::1,:,:] depth_ev_g = np.empty([ntss_ev_g,mxncomp_g,nrch_g], dtype = np.double, order = 'F')
+        double[::1,:,:] q_ev_g     = np.zeros([ntss_ev_g,mxncomp_g,nrch_g], dtype = np.double, order = 'F')
+        double[::1,:,:] elv_ev_g   = np.zeros([ntss_ev_g,mxncomp_g,nrch_g], dtype = np.double, order = 'F')
+        double[::1,:,:] depth_ev_g = np.zeros([ntss_ev_g,mxncomp_g,nrch_g], dtype = np.double, order = 'F')
     
     c_diffnw(
         &timestep_ar_g[0],

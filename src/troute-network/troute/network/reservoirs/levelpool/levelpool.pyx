@@ -1,6 +1,7 @@
 cimport numpy as np
 import numpy as np
 from libc.stdlib cimport malloc, free
+from libc.stdint cimport int64_t
 
 from troute.network.reach cimport compute_type, _Reach
 """
@@ -8,22 +9,22 @@ Externally defined symbols
 """
 
 cdef extern from "levelpool_structs.c":
-  void init_levelpool_reach(_Reach* reach, int lake_number,
+  void init_levelpool_reach(_Reach* reach, int64_t lake_number,
                             float dam_length, float area, float max_depth,
                             float orifice_area, float orifice_coefficient, float orifice_elevation,
                             float weir_coefficient, float weir_elevation, float weir_length,
-                            float initial_fractional_depth, float water_elevation, int wbody_type_code
+                            float initial_fractional_depth, double water_elevation, int wbody_type_code
   )
   void free_levelpool_reach(_Reach* reach)
 
-  void route(_Reach* reach, float routing_period, float inflow, float lateral_inflow, float* outflow,  float* water_elevation) nogil
+  void route(_Reach* reach, float routing_period, float inflow, float lateral_inflow, float* outflow,  double* water_elevation) nogil
 
-  void update_elevation(_Reach* reach, float updated_elevation, float* water_elevation) nogil
+  void update_elevation(_Reach* reach, double updated_elevation, double* water_elevation) nogil
 
-cdef void run_lp_c(_Reach* reach, float inflow, float lateral_inflow, float routing_period, float* outflow,  float* water_elevation) nogil:
+cdef void run_lp_c(_Reach* reach, float inflow, float lateral_inflow, float routing_period, float* outflow,  double* water_elevation) nogil:
     route(reach, inflow, lateral_inflow, routing_period, outflow, water_elevation)
     
-cdef void update_lp_c(_Reach* reach, float updated_elevation, float* water_elevation) nogil:
+cdef void update_lp_c(_Reach* reach, double updated_elevation, double* water_elevation) nogil:
     update_elevation(reach, updated_elevation, water_elevation)
 
 cdef class MC_Levelpool(Reach):
@@ -31,7 +32,7 @@ cdef class MC_Levelpool(Reach):
     MC_Reservoir is a subclass of MC_Reach_Base_Class
   """
 
-  def __init__(self, long id, long lake_number, long[::1] upstream_ids, args, wbody_type_code):
+  def __init__(self, int64_t id, int64_t lake_number, int64_t[::1] upstream_ids, args, wbody_type_code):
     """
       Construct the kernel based on passed parameters,
       which only constructs the parent class
@@ -55,15 +56,13 @@ cdef class MC_Levelpool(Reach):
             weir_length = args[7]
             initial_fractional_depth  = args[8]
             water_elevation = args[10]
+            dam_length = args[11], the overtopping crest in weir lengths
     """
     super().__init__(id, upstream_ids, compute_type.RESERVOIR_LP)
     # Note Some issues with __calloc__:
     # The python type isn't guaranteed to be properly constructed, so cannot depend on super class being constructured.
     # Thus I don't think we can put these C init functions in __calloc__, at least not in all cases.
-    # init the backing struct, pass a dam_length of 10.0 for now
-
-    #Setting default dam_length to 10
-    dam_length = 10.0
+    dam_length = args[11]
     area = args[0]
     max_depth = args[1]
     orifice_area = args[2]
@@ -87,7 +86,7 @@ cdef class MC_Levelpool(Reach):
     """
     free_levelpool_reach(&self._reach)
 
-  cpdef (float,float) run(self, float inflow, float lateral_inflow, float routing_period):
+  cpdef (float,double) run(self, float inflow, float lateral_inflow, float routing_period):
     """
       Run the levelpool routing function
 
@@ -106,13 +105,13 @@ cdef class MC_Levelpool(Reach):
           reservoir water surface elevation after routing_period seconds
     """
     cdef float outflow = 0.0
-    cdef float water_elevation = 0.0
+    cdef double water_elevation = 0.0
     with nogil:
       route(&self._reach, inflow, lateral_inflow, routing_period, &outflow, &water_elevation)
       #printf("outflow: %f\n", outflow)
       return outflow, water_elevation
   
-  cpdef (float) assimilate_elevation(self, float updated_elevation):
+  cpdef (double) assimilate_elevation(self, double updated_elevation):
     """
       Update the water elevation state variable
 
@@ -124,7 +123,7 @@ cdef class MC_Levelpool(Reach):
         water_elevation: float
           water elevation after data assimilation has been performed
     """
-    cdef float water_elevation = 0.0
+    cdef double water_elevation = 0.0
     with nogil:
       update_elevation(&self._reach, updated_elevation, &water_elevation)
       return water_elevation
