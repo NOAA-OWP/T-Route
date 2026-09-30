@@ -11,6 +11,7 @@ module module_rfc_forecasts_properties
                                           read_reservoir_parameters_netcdf_rfc_integer, &
                                           handle_err
     use module_reservoir, only: reservoir_properties
+    use, intrinsic :: iso_c_binding, only: C_INT64_T
     use netcdf
 
     implicit none
@@ -20,7 +21,7 @@ module module_rfc_forecasts_properties
     type, extends(reservoir_properties) :: rfc_forecasts_properties_interface
         real              :: lake_area                    ! area of reservoir (meters^2)
         real              :: max_water_elevation          ! max water elevation (meters)
-        integer           :: lake_number                  ! lake number
+        integer(C_INT64_T) :: lake_number                  ! lake number
         integer           :: reservoir_type               ! reservoir type
         character(len=5)  :: rfc_gage_id
         integer           :: lookback_seconds
@@ -52,7 +53,7 @@ contains
         class(rfc_forecasts_properties_interface), intent(inout) :: this ! the type object being initialized
         real,    intent(in)          :: lake_area                    ! area of lake (km^2)
         real,    intent(in)          :: lake_max_water_elevation     ! max water elevation (meters)
-        integer, intent(in)          :: lake_number                  ! lake number
+        integer(C_INT64_T), intent(in) :: lake_number                  ! lake number
         integer, intent(in)          :: reservoir_type               ! reservoir type
         character(len=*), intent(in) :: reservoir_parameter_file
         integer                      :: ncid, var_id, lake_id_index

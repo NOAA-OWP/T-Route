@@ -9,7 +9,10 @@ import netCDF4
 from joblib import delayed, Parallel
 import pyarrow.parquet as pq
 
-from troute.nhd_network import reverse_dict, extract_waterbody_connections, gage_mapping, extract_connections, replace_waterbodies_connections
+from troute.nhd_network import reverse_dict, _extract_waterbody_connections, gage_mapping, extract_connections, replace_waterbodies_connections
+
+import logging
+LOG = logging.getLogger("TROUTE")
 
 __showtiming__ = True #FIXME pass flag
 __verbose__ = True #FIXME pass verbosity
@@ -48,7 +51,7 @@ class NHDNetwork(AbstractNetwork):
         self._poi_nex_dict = None
         self._nexus_dict = None
         if self.verbose:
-            print("creating supernetwork connections set")
+            LOG.info("creating supernetwork connections set")
         if self.showtiming:
             start_time = time.time()
         
@@ -59,9 +62,9 @@ class NHDNetwork(AbstractNetwork):
         self.read_geo_file()
 
         if self.verbose:
-            print("supernetwork connections set complete")
+            LOG.info("supernetwork connections set complete")
         if self.showtiming:
-            print("... in %s seconds." % (time.time() - start_time))
+            LOG.info("... in %s seconds." % (time.time() - start_time))
 
         self._flowpath_dict = {}
         self._gl_climatology_df = pd.DataFrame()
@@ -155,9 +158,11 @@ class NHDNetwork(AbstractNetwork):
             'cs'        : 'ChSlp',
             }
         )
-        # Remove 'mainstem' col if it exists:
-        if 'mainstem' in cols:
-            del cols['mainstem']
+        # Drop columns the config did not supply. The Columns model defaults
+        # waterbody, alt, gages, mainstem and divide_id to None, and selecting a
+        # column named None raises; divide_id is HYFeatures-only, so every NHD
+        # config carried one and never reached the network build.
+        cols = {k: v for k, v in cols.items() if v is not None and k != 'mainstem'}
         
         # numeric code used to indicate network terminal segments
         terminal_code = self.supernetwork_parameters.get("terminal_code", 0)
@@ -200,7 +205,7 @@ class NHDNetwork(AbstractNetwork):
         # map segment ids to waterbody ids
         self._waterbody_connections = {}
         if "waterbody" in cols:
-            self._waterbody_connections = extract_waterbody_connections(
+            self._waterbody_connections = _extract_waterbody_connections(
                 self.dataframe[["waterbody"]]
             )
             self._dataframe = self.dataframe.drop("waterbody", axis=1)

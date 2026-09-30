@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import pandas as pd
 import yaml
@@ -15,11 +16,12 @@ import logging
 #from bmi_df2array import *
 import bmi_df2array as df2a
 
-from troute.routing.fast_reach.reservoir_RFC_da import _validate_RFC_data
+from troute.DataAssimilation import _read_timeseries_files
 import netCDF4
-from nwm_routing.log_level_set import log_level_set
 from troute.config import Config
-LOG = logging.getLogger('')
+from nwm_routing.log_level_set import log_level_set
+
+LOG = logging.getLogger("TROUTE")
 
 class DAforcing_model():
 
@@ -28,7 +30,8 @@ class DAforcing_model():
         
         """
         __slots__ = ['_data_assimilation_parameters', '_forcing_parameters', '_compute_parameters',
-                     '_output_parameters', '_usgs_df', 'reservoir_usgs_df', 'reservoir_usace_df', 
+                     '_output_parameters', '_usgs_df', 'reservoir_usgs_df', 'reservoir_usace_df',
+                     'reservoir_usbr_df',
                      '_rfc_timeseries_df', '_lastobs_df', '_t0', '_q0', '_waterbody_df', '_write_lite_restart',
                      '_dateNull', 
                      '_datesSecondsArray_usgs', '_nDates_usgs', '_stationArray_usgs', 
@@ -42,9 +45,13 @@ class DAforcing_model():
                      '_stationArray_reservoir_usace', '_stationStringLengthArray_reservoir_usace',
                      '_nStations_reservoir_usace', 
                      '_usace_reservoir_Array',
+                     '_datesSecondsArray_reservoir_usbr', '_nDates_reservoir_usbr',
+                     '_stationArray_reservoir_usbr', '_stationStringLengthArray_reservoir_usbr',
+                     '_nStations_reservoir_usbr',
+                     '_usbr_reservoir_Array',
                      '_rfc_da_timestep', '_rfc_totalCounts', '_rfc_synthetic_values',
                      '_rfc_discharges', '_rfc_timeseries_idx', '_rfc_use_rfc',
-                     '_rfc_Datetime', '_rfc_timeSteps', '_rfc_StationId_array',
+                     '_rfc_Datetime', '_rfc_timeSteps', '_rfc_issue_time', '_rfc_StationId_array',
                      '_rfc_StationId_stringLengths', '_rfc_List_array',
                      '_rfc_List_stringLengths',
                      '_lastObs_gageArray', '_lastObs_gageStringLengths', '_lastObs_timeSince',
@@ -55,7 +62,6 @@ class DAforcing_model():
                      '_waterbodyLR_nCol', '_waterbodyLR_indexArray', '_waterbodyLR_nIndex',
                      '_waterbodyLR_Array'                    
                      ]
-
 
         if bmi_cfg_file:
             (compute_parameters,
@@ -74,11 +80,18 @@ class DAforcing_model():
             #############################
             # Read DA files:
             #############################
-            nudging = data_assimilation_parameters.get('streamflow_da', {}).get('streamflow_nudging', False)
+            # The config schema returns an omitted section as None, and an RFC DA section
+            # that is switched off as the switch alone.
+            streamflow_da = data_assimilation_parameters.get('streamflow_da') or {}
+            reservoir_da = data_assimilation_parameters.get('reservoir_da') or {}
+            persistence_da = reservoir_da.get('reservoir_persistence_da') or {}
+            rfc_parameters = reservoir_da.get('reservoir_rfc_da') or {}
+            nudging = streamflow_da.get('streamflow_nudging', False)
             
-            usgs_persistence = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usgs', False)
-            usace_persistence = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_persistence_da', {}).get('reservoir_persistence_usace', False)
-            rfc = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_rfc_da', {}).get('reservoir_rfc_forecasts', False)
+            usgs_persistence = persistence_da.get('reservoir_persistence_usgs', False)
+            usace_persistence = persistence_da.get('reservoir_persistence_usace', False)
+            usbr_persistence = persistence_da.get('reservoir_persistence_usbr', False)
+            rfc = rfc_parameters.get('reservoir_rfc_forecasts', False)
 
             qc_threshold = data_assimilation_parameters.get('qc_threshold')
             cpu_pool = compute_parameters.get('cpu_pool')
@@ -100,31 +113,28 @@ class DAforcing_model():
             self._usgs_df = pd.DataFrame()
             self._reservoir_usgs_df = pd.DataFrame()
             self._reservoir_usace_df = pd.DataFrame()
+            self._reservoir_usbr_df = pd.DataFrame()
             self._rfc_timeseries_df = pd.DataFrame()
             self._lastobs_df = pd.DataFrame()
 
             # USGS Observations
             if nudging or usgs_persistence:
                 usgs_timeslice_path = str(data_assimilation_parameters.get('usgs_timeslices_folder'))
-                if nudging:
-                    self._usgs_df = _read_timeslice_files(usgs_timeslice_path,
-                                                          timeslice_dates,
-                                                          qc_threshold,
-                                                          dt,
-                                                          cpu_pool,)
-                    self._reservoir_usgs_df = (
-                        self._usgs_df.
-                        transpose().
-                        resample('15min').asfreq().
-                        transpose()
-                        )
-                else:
-                    self._usgs_df = pd.DataFrame()
+                self._usgs_df = (_read_timeslice_files(usgs_timeslice_path,
+                                                       timeslice_dates,
+                                                       qc_threshold,
+                                                       dt,
+                                                       cpu_pool,)
+                                 if nudging else pd.DataFrame())
+                # Read apart from the nudging frame, which drops zeros; a reservoir
+                # releasing zero is observed.
+                if usgs_persistence:
                     self._reservoir_usgs_df = _read_timeslice_files(usgs_timeslice_path,
                                                                     timeslice_dates,
                                                                     qc_threshold,
                                                                     900, #15 minutes
-                                                                    cpu_pool,)
+                                                                    cpu_pool,
+                                                                    zero_is_missing=False,)
 
             # USACE Observations        
             if usace_persistence:
@@ -133,29 +143,44 @@ class DAforcing_model():
                                                                  timeslice_dates,
                                                                  qc_threshold,
                                                                  900, #15 minutes
-                                                                 cpu_pool,)
-
-            # Produce list of datetimes to search for timeseries files
-            rfc_parameters = data_assimilation_parameters.get('reservoir_da', {}).get('reservoir_rfc_da', {})
-            lookback_hrs = rfc_parameters.get('reservoir_rfc_forecasts_lookback_hours')
-            offset_hrs = rfc_parameters.get('reservoir_rfc_forecasts_offset_hours')
-            timeseries_end = start_datetime + timedelta(hours=offset_hrs)
-            timeseries_start = timeseries_end - timedelta(hours=lookback_hrs)
-            delta = timedelta(hours=1)
-            timeseries_dates = []
-            while timeseries_start <= timeseries_end:
-                timeseries_dates.append(timeseries_start.strftime('%Y-%m-%d_%H'))
-                timeseries_start += delta
-            rfc_forecast_persist_days = rfc_parameters.get('reservoir_rfc_forecast_persist_days')
-            final_persist_datetime = start_datetime + timedelta(days=rfc_forecast_persist_days)
+                                                                 cpu_pool,
+                                                                 zero_is_missing=False,)
+            
+            # USBR Observations
+            if usbr_persistence:
+                usbr_timeslice_path = str(data_assimilation_parameters.get('usbr_timeslices_folder'))
+                self._reservoir_usbr_df = _read_timeslice_files(usbr_timeslice_path,
+                                                                timeslice_dates,
+                                                                qc_threshold,
+                                                                900, #15 minutes
+                                                                cpu_pool,
+                                                                zero_is_missing=False,)
 
             # RFC Observations
             if rfc:
+                # Produce list of datetimes to search for timeseries files
+                lookback_hrs = rfc_parameters.get('reservoir_rfc_forecasts_lookback_hours')
+                offset_hrs = rfc_parameters.get('reservoir_rfc_forecasts_offset_hours')
+                timeseries_end = start_datetime + timedelta(hours=offset_hrs)
+                timeseries_start = timeseries_end - timedelta(hours=lookback_hrs)
+                delta = timedelta(hours=1)
+                timeseries_dates = []
+                while timeseries_start <= timeseries_end:
+                    timeseries_dates.append(timeseries_start.strftime('%Y-%m-%d_%H'))
+                    timeseries_start += delta
+                rfc_forecast_persist_days = rfc_parameters.get('reservoir_rfc_forecast_persist_days')
+                final_persist_datetime = start_datetime + timedelta(days=rfc_forecast_persist_days)
+
                 rfc_timeseries_path = str(rfc_parameters.get('reservoir_rfc_forecasts_time_series_path'))
-                self._rfc_timeseries_df = _read_timeseries_files(rfc_timeseries_path, timeseries_dates, start_datetime, final_persist_datetime)
+                self._rfc_timeseries_df = _read_timeseries_files(
+                    rfc_timeseries_path, timeseries_dates, start_datetime,
+                    final_persist_datetime, routing_period=dt,
+                    unavailable_action=rfc_parameters.get(
+                        'reservoir_rfc_forecasts_unavailable_action', 'level_pool'),
+                )
 
             # Lastobs
-            lastobs_file = data_assimilation_parameters.get('streamflow_da', {}).get('lastobs_file', False)
+            lastobs_file = streamflow_da.get('lastobs_file', False)
 
             if lastobs_file:
                 self._lastobs_df = _read_lastobs_file(lastobs_file)
@@ -290,6 +315,23 @@ class DAforcing_model():
                 # ... and save it with the class instance
                 self._reservoirUsaceArray = _reservoirUsaceArray  
 
+            # USBR Reservoir Observations
+            self._datesSecondsArray_reservoir_usbr = np.zeros(0)
+            self._nDates_reservoir_usbr = np.zeros(0)
+            self._stationArray_reservoir_usbr = np.zeros(0)
+            self._stationStringLengthArray_reservoir_usbr = np.zeros(0)
+            self._nStations_reservoir_usbr = np.zeros(0)
+            self._reservoirUsbrArray = np.zeros(0)
+
+            if not self._reservoir_usbr_df.empty:
+
+                # see detailed comments in USGS branch
+                (self._datesSecondsArray_reservoir_usbr, self._nDates_reservoir_usbr,
+                 self._stationArray_reservoir_usbr, self._stationStringLengthArray_reservoir_usbr,
+                 self._nStations_reservoir_usbr) \
+                    = df2a._time_stations_from_df(self._reservoir_usbr_df, start_datetime)
+                self._reservoirUsbrArray = df2a._flatten_array(self._reservoir_usbr_df, np.float32)
+
 
             # RFC Timeseries    
             self._rfc_da_timestep = np.zeros(0)    
@@ -300,6 +342,7 @@ class DAforcing_model():
             self._rfc_use_rfc = np.zeros(0)   
             self._rfc_Datetime = np.zeros(0)   
             self._rfc_timeSteps = np.zeros(0)   
+            self._rfc_issue_time = np.zeros(0)
             self._rfc_StationId_array = np.zeros(0) 
             self._rfc_StationId_stringLengths = np.zeros(0) 
             self._rfc_List_array = np.zeros(0) 
@@ -310,7 +353,7 @@ class DAforcing_model():
                 (_rfc_da_timestep, _rfc_totalCounts, _rfc_synthetic_values, _rfc_discharges, \
                     _rfc_timeseries_idx, _rfc_use_rfc, _rfc_Datetime, _rfc_timeSteps, \
                     _rfc_StationId_array, _rfc_StationId_stringLengths, _rfc_List_array, \
-                    _rfc_List_stringLengths) = \
+                    _rfc_List_stringLengths, _rfc_issue_time) = \
                     df2a._bmi_disassemble_rfc_timeseries (self._rfc_timeseries_df, start_datetime)
                 # save all data in class instance
                 self._rfc_da_timestep = _rfc_da_timestep
@@ -321,6 +364,7 @@ class DAforcing_model():
                 self._rfc_use_rfc = _rfc_use_rfc
                 self._rfc_Datetime = _rfc_Datetime
                 self._rfc_timeSteps = _rfc_timeSteps
+                self._rfc_issue_time = _rfc_issue_time
                 self._rfc_StationId_array = _rfc_StationId_array
                 self._rfc_StationId_stringLengths = _rfc_StationId_stringLengths
                 self._rfc_List_array = _rfc_List_array
@@ -461,7 +505,7 @@ def _read_config_file(custom_input_file):
         data = yaml.load(custom_file, Loader=yaml.SafeLoader)
 
     troute_configuration = Config(**data)
-    config_dict = troute_configuration.dict()
+    config_dict = troute_configuration.model_dump()
 
     compute_parameters = config_dict.get("compute_parameters")
     forcing_parameters = compute_parameters.get("forcing_parameters")
@@ -483,6 +527,7 @@ def _read_timeslice_files(filepath,
                           frequency_secs, 
                           cpu_pool=1,
                           interpolation_limit=59,
+                          zero_is_missing=True,
                           ):
     #Read files
     observation_df = pd.DataFrame()
@@ -490,7 +535,9 @@ def _read_timeslice_files(filepath,
         f = glob.glob(filepath + '/' + d + '*')
 
         if f:
-            temp_df = xr.open_dataset(f[0])[['stationId','time','discharge','discharge_quality']].to_dataframe()
+            # drop queryTime: its non-CF units crash xarray's decode on all-fill
+            # USACE slices, and nothing here reads it.
+            temp_df = xr.open_dataset(f[0], drop_variables="queryTime")[['stationId','time','discharge','discharge_quality']].to_dataframe()
             observation_df = pd.concat([observation_df, temp_df])
 
     if not observation_df.empty:
@@ -502,7 +549,10 @@ def _read_timeslice_files(filepath,
         observation_df.loc[observation_df['discharge_quality']<0, 'discharge'] = np.nan
         observation_df.loc[observation_df['discharge_quality']>1, 'discharge'] = np.nan
         observation_df.loc[observation_df['discharge_quality']<qc_threshold, 'discharge'] = np.nan
-        observation_df.loc[observation_df['discharge']<=0, 'discharge'] = np.nan
+        # A stream gage reading zero is an outage; a reservoir releasing zero is closed.
+        invalid = (observation_df['discharge'] <= 0 if zero_is_missing
+                   else observation_df['discharge'] < 0)
+        observation_df.loc[invalid, 'discharge'] = np.nan
 
         observation_df = observation_df[['stationId','time','discharge']].set_index(['stationId', 'time']).unstack(1, fill_value = np.nan)['discharge']
 
@@ -512,8 +562,9 @@ def _read_timeslice_files(filepath,
             observation_df_T.index, format = "%Y-%m-%d_%H:%M:%S"  # index variable as type datetime
         )
         
-        # specify resampling frequency 
-        frequency = str(int(frequency_secs/60))+"min"    
+        # Seconds, not truncated minutes: truncation puts a dt that is not whole minutes
+        # on the wrong grid, and any dt under 60 s on no grid at all.
+        frequency = f"{int(frequency_secs)}s"
 
         # interpolate and resample frequency
         buffer_df = observation_df_T.resample(frequency).asfreq()
@@ -551,10 +602,14 @@ def _read_timeslice_files(filepath,
     return observation_df_new
 
 def _interpolate_one(df, interpolation_limit, frequency):
-    
-    interp_out = (df.resample('min').
+
+    # Interpolate on the finest grid the minute-based limit and the target step share,
+    # so a target that is not whole minutes still gets values rather than NaN.
+    step_seconds = int(pd.Timedelta(frequency).total_seconds())
+    base_seconds = math.gcd(60, step_seconds) or 60
+    interp_out = (df.resample(f'{base_seconds}s').
                         interpolate(
-                            limit = interpolation_limit, 
+                            limit = interpolation_limit * (60 // base_seconds),
                             limit_direction = 'both'
                         ).
                         resample(frequency).
@@ -563,50 +618,6 @@ def _interpolate_one(df, interpolation_limit, frequency):
                        )
     return interp_out
 
-def _read_timeseries_files(filepath, timeseries_dates, t0, final_persist_datetime):
-    # Search for most recent RFC timseries file based on offset hours and lookback window
-    # for each location.
-    files = glob.glob(filepath + '/*')
-    # create temporary dataframe with file names, split up by location and datetime
-    df = pd.DataFrame([f.split('/')[-1].split('.') for f in files], columns=['Datetime','dt','ID','rfc','ext'])
-    df = df[df['Datetime'].isin(timeseries_dates)][['ID','Datetime']]
-    # For each location, find the most recent timeseries file (within timeseries window calculated a priori)
-    df['Datetime'] = df['Datetime'].apply(lambda _: datetime.strptime(_, '%Y-%m-%d_%H'))
-    df = df.groupby('ID').max().reset_index()
-    df['Datetime'] = df['Datetime'].dt.strftime('%Y-%m-%d_%H')
-
-    # Loop through list of timeseries files and store relevent information in dataframe.
-    file_list = (df['Datetime'] + '.60min.' + df['ID'] + '.RFCTimeSeries.ncdf').tolist()
-    rfc_df = pd.DataFrame()
-    for f in file_list:
-        ds = xr.open_dataset(filepath + '/' + f)
-        sliceStartTime = datetime.strptime(ds.attrs.get('sliceStartTimeUTC'), '%Y-%m-%d_%H:%M:%S')
-        sliceTimeResolutionMinutes = ds.attrs.get('sliceTimeResolutionMinutes')
-        df = ds.to_dataframe().reset_index().sort_values('forecastInd')[['stationId','discharges','synthetic_values','totalCounts','timeSteps']]
-        df['Datetime'] = pd.date_range(sliceStartTime, periods=df.shape[0], freq=sliceTimeResolutionMinutes+'T')
-        # Filter out forecasts that go beyond the rfc_persist_days parameter. This isn't necessary, but removes
-        # excess data, keeping the dataframe of observations as small as possible.
-        df = df[df['Datetime']<final_persist_datetime]
-        # Locate where t0 is in the timeseries
-        df['timeseries_idx'] = df.index[df.Datetime == t0][0]
-        df['file'] = f
-
-        # Validate data to determine whether or not it will be used.
-        use_rfc = _validate_RFC_data(
-            df['stationId'][0],
-            df.discharges,
-            df.synthetic_values,
-            filepath,
-            f,
-            300, #NOTE: this is t-route's default timestep. This will need to be verifiied again within t-route...
-            False
-        )
-        df['use_rfc'] = use_rfc
-        df['da_timestep'] = int(sliceTimeResolutionMinutes)*60
-
-        rfc_df = pd.concat([rfc_df, df])
-    rfc_df['stationId'] = rfc_df['stationId'].str.decode('utf-8').str.strip()
-    return rfc_df
 
 def _read_lastobs_file(
         lastobsfile,
@@ -895,7 +906,13 @@ def write_flowveldepth_netcdf(values,
                 LOG.debug(f"Flowveldepth data saved as PICKLE files in {stream_output_directory}")
 
             else:
-                print('WRONG FORMAT')
+                # Config validation pins this to .nc/.csv/.pkl, so reaching here means a
+                # caller bypassed it.
+                LOG.error(
+                    "stream_output_type %r is not one of '.nc', '.csv' or '.pkl', so no "
+                    "flowveldepth output was written to %s.",
+                    stream_output_type, stream_output_directory,
+                )
 
         if stream_output_directory:
             if (stream_output_type =='.nc'):
@@ -928,12 +945,13 @@ def write_flowveldepth_netcdf(values,
 
                         # Set data for each feature_id and time_step
                         ncfile.variables[var][:] = data_array
+                    # int64: NHF link ids (~1.26e15) wrap silently under int32.
                     feature_id = ncfile.createVariable(
                         varname='feature_id',
-                        datatype=np.int32,
+                        datatype=np.int64,
                         dimensions=('feature_id',),
                     )
-                    feature_id[:] = flowveldepth.index.to_numpy(dtype=np.int32)
+                    feature_id[:] = flowveldepth.index.to_numpy(dtype=np.int64)
                     feature_id.units = 'None'
                     feature_id.description = 'Feature IDs'
                     ###

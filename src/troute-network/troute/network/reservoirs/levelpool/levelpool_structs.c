@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdint.h>
+#include "logger.h"
 #include "../../reach_structs.h"
 #include <stdio.h>
 /* Level Pool Reservoir Interface */
@@ -6,21 +8,21 @@
 /* define C compatible Fortran subroutines from bind_lp.f90 */
 extern void* get_lp_handle();
 
-extern void init_lp(void* handle, float *water_elevation, float *lake_area, 
+extern void init_lp(void* handle, double *water_elevation, float *lake_area, 
                     float *weir_elevation, float *weir_coefficient, 
                     float *weir_length, float *dam_length, 
                     float *orifice_elevation, float *orifice_coefficient, 
-                    float *orifice_area, float *max_depth, int *lake_number, 
+                    float *orifice_area, float *max_depth, int64_t *lake_number, 
                     int *wbody_type_code);
 
 extern void run_lp(void* handle, float *inflow, float *lateral_inflow,
-                   float *water_elevation, float *outflow, 
+                   double *water_elevation, float *outflow, 
                    float *routing_period);
 
 extern void free_lp(void* handle);
 
-extern void assim(void* handle, float *updated_elevation, 
-                  float *water_elevation);
+extern void assim(void* handle, double *updated_elevation, 
+                  double *water_elevation);
 
 /*
  * Function: init_levelpool_reach
@@ -55,7 +57,7 @@ extern void assim(void* handle, float *updated_elevation,
  *
  * - initial_fractional_depth (float): 
  *
- * - water_elevation          (float): water surface elevation, meters
+ * - water_elevation          (double): water surface elevation, meters
  *
  * - wbody_type_code            (int): integer indicating the type of reservoir
  *                                      1: Levelpool
@@ -69,12 +71,12 @@ extern void assim(void* handle, float *updated_elevation,
  * Notes
  *
  */
-void init_levelpool_reach(_Reach* reach, int lake_number,
+void init_levelpool_reach(_Reach* reach, int64_t lake_number,
                      float dam_length, float area, float max_depth, 
                      float orifice_area, float orifice_coefficient, 
                      float orifice_elevation, float weir_coefficient, 
                      float weir_elevation, float weir_length, 
-                     float initial_fractional_depth, float water_elevation, 
+                     float initial_fractional_depth, double water_elevation, 
                      int wbody_type_code
 )
 {
@@ -96,8 +98,7 @@ void init_levelpool_reach(_Reach* reach, int lake_number,
 
     if(water_elevation < -900000000){
       //Equation below is used in wrf-hydro
-      printf("WARNING: LEVELPOOL USING COLDSTART WATER ELEVATION\n");
-      fflush(stdout);
+      Log(WARNING, "LEVELPOOL USING COLDSTART WATER ELEVATION");
       reach->reach.lp.water_elevation = orifice_elevation 
           + ((max_depth - orifice_elevation) * initial_fractional_depth);
     }
@@ -142,11 +143,11 @@ void free_levelpool_reach(_Reach* reach)
  *
  * outflow           (float): reservoir outflow at end of routing period (cms)
  *
- * water_elevation   (float): (initial, then computed) water elevation
+ * water_elevation   (double): (initial, then computed) water elevation
  *
  */
 void route(_Reach* reach, float inflow, float lateral_inflow, float routing_period,
-           float* outflow, float* water_elevation)
+           float* outflow, double* water_elevation)
 {
   run_lp(reach->reach.lp.handle, &inflow, &lateral_inflow, &reach->reach.lp.water_elevation, outflow, &routing_period);
   *water_elevation = reach->reach.lp.water_elevation;
@@ -161,12 +162,12 @@ void route(_Reach* reach, float inflow, float lateral_inflow, float routing_peri
  * ---------
  * reach                  ():
  *
- * updated_elevation (float):
+ * updated_elevation (double):
  *
- * water_elevation   (float):
+ * water_elevation   (double):
  *
  */
-void update_elevation(_Reach* reach, float updated_elevation, float* water_elevation)
+void update_elevation(_Reach* reach, double updated_elevation, double* water_elevation)
 {
   assim(reach->reach.lp.handle, &updated_elevation, &reach->reach.lp.water_elevation);
   *water_elevation = reach->reach.lp.water_elevation;

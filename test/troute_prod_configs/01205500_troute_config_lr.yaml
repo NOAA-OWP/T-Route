@@ -1,0 +1,52 @@
+log_parameters:
+    showtiming: true
+    log_level: DEBUG
+network_topology_parameters:
+    supernetwork_parameters:
+        geo_file_path: test/unit_test_hyfeature/domain/gauge_01069700.gpkg
+        network_type: NHF
+    waterbody_parameters:
+        break_network_at_waterbodies: true
+compute_parameters:
+    parallel_compute_method: by-subnetwork-jit-clustered
+    compute_kernel: V02-structured
+    assume_short_ts: true
+    subnetwork_target_size: 10000
+    cpu_pool: 16
+    restart_parameters:
+        start_datetime: '2026-07-13 12:00:00'
+    forcing_parameters:
+        qts_subdivisions: 12
+        dt: 300
+        qlat_input_folder: .
+        qlat_file_pattern_filter: nex-*
+        nts: 8628
+    data_assimilation_parameters:
+        streamflow_da:
+            streamflow_nudging: false
+            streamflow_scaling: false
+            diffusive_streamflow_nudging: false
+        usgs_timeslices_folder: test/LowerColorado_TX_v4/usgs_timeslices
+        diversion_da:
+            diversion_gage_crosswalk:
+                1270479816524705: '07381482'
+            diversion_persist_days: 32
+        reservoir_da:
+            reservoir_persistence_da:
+                reservoir_persistence_greatLake: false
+                reservoir_persistence_usace: false
+                reservoir_persistence_usbr: false
+                reservoir_persistence_usgs: false
+            reservoir_rfc_da:
+                reservoir_rfc_forecast_persist_days: 11
+                reservoir_rfc_forecasts: true
+                reservoir_rfc_forecasts_lookback_hours: 28
+                reservoir_rfc_forecasts_offset_hours: 0
+                reservoir_rfc_forecasts_time_series_path: test/BMI/rfc_timeseries
+output_parameters:
+    lakeout_output: .
+    stream_output:
+        stream_output_directory: .
+        stream_output_time: 720
+        stream_output_type: .nc
+        stream_output_internal_frequency: 60

@@ -1,6 +1,7 @@
 
 from array import array
 from troute.network.reservoirs.rfc.rfc import MC_RFC
+from troute.routing.compute import NWM_DAM_LENGTH_MULTIPLIER
 from troute.network.reservoirs.levelpool.levelpool import MC_Levelpool
 from troute.routing.fast_reach.reservoir_RFC_da import reservoir_RFC_da, reservoir_RFC_da_v2
 
@@ -44,7 +45,7 @@ args = [values['lake_area'], values['max_depth'], values['orifice_area'], #value
         values['orifice_coefficient'], values['orifice_elevation'],
         values['weir_coefficient'], values['weir_elevation'], 
         values['weir_length'], values['initial_fractional_depth'], 
-        0.0, values['lake_surface__elevation']]
+        0.0, values['lake_surface__elevation'], NWM_DAM_LENGTH_MULTIPLIER]
 
 
 #--------------------------------------------------------

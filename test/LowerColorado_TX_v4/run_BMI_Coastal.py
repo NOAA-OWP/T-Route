@@ -105,6 +105,7 @@ def run_troute(config):
     # - usgs
     # - usgs_reservoir
     # - usace_reservoir
+    # - usbr_reservoir
     # - rfc
 
     # Date reference
@@ -133,6 +134,14 @@ def run_troute(config):
     troute.set_value('stationStringLengthArray_reservoir_usace', DAforcing.get_value('stationStringLengthArray_reservoir_usace'))
     troute.set_value('nStations_reservoir_usace', DAforcing.get_value('nStations_reservoir_usace'))
     troute.set_value('usace_reservoir_Array', DAforcing.get_value('usace_reservoir_Array'))
+
+    # USBR reservoir dataframe
+    troute.set_value('datesSecondsArray_reservoir_usbr', DAforcing.get_value('datesSecondsArray_reservoir_usbr'))
+    troute.set_value('nDates_reservoir_usbr', DAforcing.get_value('nDates_reservoir_usbr'))
+    troute.set_value('stationArray_reservoir_usbr', DAforcing.get_value('stationArray_reservoir_usbr'))
+    troute.set_value('stationStringLengthArray_reservoir_usbr', DAforcing.get_value('stationStringLengthArray_reservoir_usbr'))
+    troute.set_value('nStations_reservoir_usbr', DAforcing.get_value('nStations_reservoir_usbr'))
+    troute.set_value('usbr_reservoir_Array', DAforcing.get_value('usbr_reservoir_Array'))
 
     # RFC timeseries dataframe converted
     troute.set_value('rfc_da_timestep', DAforcing.get_value('rfc_da_timestep'))

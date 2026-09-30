@@ -18,6 +18,7 @@ module module_rfc_forecasts
     use module_levelpool, only: levelpool
     use module_reservoir_utilities, only: create_rfc_forecasts_diagnostic_log_file, &
                                           log_rfc_forecasts_diagnostic_data
+    use, intrinsic :: iso_c_binding, only: C_INT64_T
     use module_reservoir, only: reservoir, reservoir_input, reservoir_output
     use module_reservoir_read_rfc_time_series_data, only: time_series_data
     use module_hydro_stop, only: HYDRO_stop
@@ -60,18 +61,18 @@ contains
 
         implicit none
         class(rfc_forecasts), intent(inout) :: this ! object being initialized
-        real,    intent(inout) :: water_elevation           ! meters AMSL
+        double precision, intent(inout) :: water_elevation ! meters AMSL
         real,    intent(in)    :: lake_area                 ! area of lake (km^2)
         real,    intent(in)    :: weir_elevation            ! bottom of weir elevation (meters AMSL)
         real,    intent(in)    :: weir_coeffecient          ! weir coefficient
         real,    intent(in)    :: weir_length               ! weir length (meters)
-        real,    intent(in)    :: dam_length                ! dam length (meters)
+        real,    intent(in)    :: dam_length                ! dam length, a multiplier on weir length
         real,    intent(in)    :: orifice_elevation         ! orifice elevation (meters AMSL)
         real,    intent(in)    :: orifice_coefficient       ! orifice coefficient
         real,    intent(in)    :: orifice_area              ! orifice area (meters^2)
         real,    intent(in)    :: lake_max_water_elevation  ! max water elevation (meters)
         real,    intent(in)    :: initial_fractional_depth  ! initial fraction water depth
-        integer, intent(in)    :: lake_number               ! lake number
+        integer(C_INT64_T), intent(in)    :: lake_number               ! lake number
         integer, intent(in)    :: reservoir_type            ! reservoir type
         character(len=*),   intent(in) :: reservoir_parameter_file
         character(len=19),  intent(in) :: start_date
@@ -212,7 +213,7 @@ contains
         real, intent(in)    :: previous_timestep_inflow ! cubic meters per second (cms)
         real, intent(in)    :: inflow                   ! cubic meters per second (cms)
         real, intent(in)    :: lateral_inflow           ! cubic meters per second (cms)
-        real, intent(inout) :: water_elevation          ! meters
+        double precision, intent(inout) :: water_elevation ! meters
         real, intent(out)   :: outflow                  ! cubic meters per second (cms)
         real, intent(in)    :: routing_period           ! seconds
         integer, intent(out):: dynamic_reservoir_type   ! dynamic reservoir type sent to lake out files

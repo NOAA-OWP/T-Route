@@ -12,7 +12,7 @@ import troute.nhd_network_utilities_v02 as nnu
 import troute.nhd_network as nhd_network
 import troute.nhd_io as nhd_io
 
-LOG = logging.getLogger('')
+LOG = logging.getLogger("TROUTE")
 
 def _reindex_link_to_lake_id(target_df, crosswalk):
     '''
@@ -1057,44 +1057,9 @@ def nwm_forcing_preprocess(
             to_numpy()
         )
     
-    # if USGS TimeSlices have already been opened and assembled for 
-    # streamflow DA, then simply take TimeSlice observations from `usgs_df`,
-    # no need to open TimeSlice files again.
-    if usgs_persistence and nudging and usgs_df.empty == False:
-        
-        start_time = time.time()
-        LOG.info(
-            "Creating a DataFrame of USGS gage observations for Reservoir DA ..."
-        )
-        
-        
-        # build dataframe that crosswalks segmentIDs to lakeIDs
-        link_lake_df = (
-            gage_lake_df.join(gage_link_df, how = 'inner').
-            reset_index(drop=True).set_index('link')
-        )
-        
-        # resample `usgs_df` to 15 minute intervals
-        usgs_df_15min = (
-            usgs_df.
-            transpose().
-            resample('15min').asfreq().
-            transpose()
-        )
-        
-        # subset and re-index `usgs_df`, using the segID <> lakeID crosswalk
-        reservoir_usgs_df = (
-            usgs_df_15min.join(link_lake_df, how = 'inner').
-            reset_index(drop=True).
-            set_index('usgs_lake_id')
-        )
-        
-        LOG.debug(
-            "Reservoir DA USGS observation DataFrame creation complete in %s seconds." \
-            % (time.time() - start_time)
-        )
-                    
-    elif usgs_persistence and not nudging:
+    # Read apart from the nudging frame, which drops zeros; a reservoir releasing
+    # zero is observed.
+    if usgs_persistence:
         
         start_time = time.time()
         LOG.info("Creating a DataFrame of USGS gage observations for Reservoir DA ...")
@@ -1140,7 +1105,8 @@ def nwm_forcing_preprocess(
                 interpolation_limit,
                 900,                      # 15 minutes, as secs
                 run["t0"],
-                cpu_pool
+                cpu_pool,
+                zero_is_missing=False,
             )
             
         else:
@@ -1220,7 +1186,8 @@ def nwm_forcing_preprocess(
                 interpolation_limit,
                 900,                      # 15 minutes, as secs
                 run["t0"],
-                cpu_pool
+                cpu_pool,
+                zero_is_missing=False,
             )
         else:
             reservoir_usace_df = pd.DataFrame()

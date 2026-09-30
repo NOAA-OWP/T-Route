@@ -79,6 +79,7 @@ class bmi_troute(Bmi):
         'usgs_gage_observation__volume_flow_rate',
         'reservoir_usgs_gage_observation__volume_flow_rate',
         'reservoir_usace_gage_observation__volume_flow_rate', 
+        'reservoir_usbr_gage_observation__volume_flow_rate',
         'rfc_gage_observation__volume_flow_rate', 
         'lastobs__volume_flow_rate' 
         ]
@@ -92,7 +93,7 @@ class bmi_troute(Bmi):
                          'lake_water~incoming__volume_flow_rate',
                          'lake_water~outgoing__volume_flow_rate',
                          'lake_surface__elevation',
-                         #TODO: add 'assimilated_value' as an output?
+                         'channel_water__assimilated_volume_flow_rate',
                         ]
 
     #------------------------------------------------------
@@ -106,12 +107,14 @@ class bmi_troute(Bmi):
         'lake_water~incoming__volume_flow_rate':['waterbody_cms','m3 s-1'],
         'lake_water~outgoing__volume_flow_rate':['waterbody_cms','m3 s-1'],
         'lake_surface__elevation':['waterbody_m','m'],
+        'channel_water__assimilated_volume_flow_rate':['assimilated_value','m3 s-1'],
         #--------------   Dynamic inputs --------------------------------
         'land_surface_water_source__volume_flow_rate':['streamflow_cms','m3 s-1'],
         'coastal_boundary_depth':['depth_m', 'm'],
         'usgs_gage_observation__volume_flow_rate':['streamflow_cms','m3 s-1'],
         'reservoir_usgs_gage_observation__volume_flow_rate':['streamflow_cms','m3 s-1'],
         'reservoir_usace_gage_observation__volume_flow_rate':['streamflow_cms','m3 s-1'],
+        'reservoir_usbr_gage_observation__volume_flow_rate':['streamflow_cms','m3 s-1'],
         'rfc_gage_observation__volume_flow_rate':['streamflow_cms','m3 s-1'],
         'lastobs__volume_flow_rate':['streamflow_cms','m3 s-1']
     }
@@ -199,6 +202,7 @@ class bmi_troute(Bmi):
         self._values['lake_water~incoming__volume_flow_rate'] = np.zeros(0)
         self._values['lake_water~outgoing__volume_flow_rate'] = np.zeros(0)
         self._values['lake_surface__elevation'] = np.zeros(0)
+        self._values['channel_water__assimilated_volume_flow_rate'] = np.zeros(0)
 
         # upstream values from other bmi run...
         self._values['upstream_id'] = np.zeros(0, dtype=int)
@@ -229,6 +233,7 @@ class bmi_troute(Bmi):
         self._values['usgs_df'] = np.zeros(0)
         self._values['reservoir_usgs_df'] = np.zeros(0)
         self._values['reservoir_usace_df'] = np.zeros(0)
+        self._values['reservoir_usbr_df'] = np.zeros(0)
         self._values['rfc_timeseries_df'] = np.zeros(0)
         self._values['lastobs_df'] = np.zeros(0)
         self._values['nudging'] = np.zeros(0)
@@ -260,6 +265,14 @@ class bmi_troute(Bmi):
         self._values['nStations_reservoir_usace'] = np.zeros(0)
         self._values['usace_reservoir_Array'] = np.zeros(0)
         #
+        # reservoir_usbr_df
+        self._values['datesSecondsArray_reservoir_usbr'] = np.zeros(0)
+        self._values['nDates_reservoir_usbr'] = np.zeros(0)
+        self._values['stationArray_reservoir_usbr'] = np.zeros(0)
+        self._values['stationStringLengthArray_reservoir_usbr'] = np.zeros(0)
+        self._values['nStations_reservoir_usbr'] = np.zeros(0)
+        self._values['usbr_reservoir_Array'] = np.zeros(0)
+        #
         # RFC dataframe
         self._values['rfc_da_timestep'] = np.zeros(0)
         self._values['rfc_totalCounts'] = np.zeros(0)
@@ -269,6 +282,7 @@ class bmi_troute(Bmi):
         self._values['rfc_use_rfc'] = np.zeros(0)
         self._values['rfc_Datetime'] = np.zeros(0)
         self._values['rfc_timeSteps'] = np.zeros(0)
+        self._values['rfc_issue_time'] = np.zeros(0)
         self._values['rfc_StationId_array'] = np.zeros(0)
         self._values['rfc_StationId_stringLengths'] = np.zeros(0)
         self._values['rfc_List_array'] = np.zeros(0)

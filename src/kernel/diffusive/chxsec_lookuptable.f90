@@ -129,7 +129,6 @@ contains
   !-----------------------------------------------------------------------------
   ! Some parameters for using natural cross section bathymetry data
     mxnbathy            = mxnbathy_g ! maximum size of bathymetry data points
-    !z                  = z_ar_g     ! node elevation array
     applyNaturalSection = 1          ! 0: synthetic channel xsec;  1: topobathy data
     timesDepth          = 4.0 ! water depth multiplier used in readXsection
     nel                 = nrow_chxsec_lookuptable ! number of rows in the hydraulic value lookup tables for ch.xsec   
@@ -145,6 +144,11 @@ contains
     allocate(size_bathy(mxncomp, nlinks))
     allocate(z(mxncomp, nlinks))
     allocate(xsec_tab(11, nel, mxncomp, nlinks))
+
+  ! Both are published wholesale, but only mainstem reaches are visited below and
+  ! columns 7 and 8 never are. z seeds from input elevation, as diffusive.f90 does.
+    z        = z_ar_g
+    xsec_tab = 0.0
   
   !-----------------------------------------------------------------------------
   ! channel network mapping matrix  

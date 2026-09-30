@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 from functools import partial, reduce
 import troute.nhd_network as nhd_network
@@ -5,6 +7,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 from collections import Counter
 import math
+
+LOG = logging.getLogger(__name__)
 
 
 def adj_alt1(
@@ -918,6 +922,10 @@ def diffusive_input_data_v02(
     #                  Prepare initial conditions data
     # ---------------------------------------------------------------------------------
     iniq = np.zeros((mxncomp_g, nrch_g))
+    # q0 only covers the MC-routed segments, so the diffusive mainstem is absent
+    # from it by construction (83 of 6,971 on LowerColorado_TX_v4) and an
+    # unconditional lookup raised. Fall back to the floor this loop applies anyway.
+    missing_iniq = 0
     frj = -1
     for x in range(mx_jorder, -1, -1):
         for head_segment, reach in ordered_reaches[x]:
@@ -931,7 +939,11 @@ def diffusive_input_data_v02(
                     segID = seg_list[seg]
 
                 # retrieve initial condition from initial_conditions DataFrame
-                iniq[seg, frj] = initial_conditions.loc[segID, 'qu0']
+                if segID in initial_conditions.index:
+                    iniq[seg, frj] = initial_conditions.loc[segID, 'qu0']
+                else:
+                    iniq[seg, frj] = 0.0
+                    missing_iniq += 1
 
                 # set lower limit on initial flow condition
                 if iniq[seg, frj]<0.0001:
@@ -997,8 +1009,19 @@ def diffusive_input_data_v02(
                 qtrib_g[1:,frj] = junction_inflows.loc[head_segment]                
                 # TODO - if one of the tributary segments is a waterbody, it's initial conditions
                 # will not be in the initial_conditions array, but rather will be in the waterbodies_df array
-                qtrib_g[0,frj] = initial_conditions.loc[head_segment, 'qu0']    
+                if head_segment in initial_conditions.index:
+                    qtrib_g[0,frj] = initial_conditions.loc[head_segment, 'qu0']
+                else:
+                    qtrib_g[0,frj] = 0.0
+                    missing_iniq += 1
   
+    if missing_iniq:
+        LOG.warning(
+            "diffusive: %d segment(s) had no entry in the initial-conditions frame and "
+            "start from zero flow; q0 covers the Muskingum-routed set only.",
+            missing_iniq,
+        )
+
     # ---------------------------------------------------------------------------------
     #                              Step 0-10
 
